@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { isStageAdvancement, CELEBRATION_STAGES } from "@/lib/stages";
@@ -105,6 +106,7 @@ const fireConfetti = async (isBigCelebration: boolean = false) => {
 };
 
 export default function Dashboard() {
+  const router = useRouter();
   const [stages, setStages] = useState<Stage[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
@@ -146,6 +148,11 @@ export default function Dashboard() {
 
         if (userRes.ok) {
           const data = await userRes.json();
+          // Check if onboarding is completed
+          if (!data.user.onboardingCompleted) {
+            router.push("/onboarding");
+            return;
+          }
           setBookingSlug(data.user.bookingLink?.slug || "me");
         }
       } catch (error) {
@@ -156,7 +163,7 @@ export default function Dashboard() {
     };
 
     fetchData();
-  }, []);
+  }, [router]);
 
   const handleDragStart = (company: Company) => {
     setDraggedCompany(company);

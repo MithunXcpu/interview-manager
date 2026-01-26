@@ -10,7 +10,7 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const user = await db.user.findUnique({
+    let user = await db.user.findUnique({
       where: { clerkId: userId },
       include: {
         userStages: {
@@ -28,8 +28,51 @@ export async function GET() {
       },
     });
 
+    // Create user if not found (fallback for users who signed up before webhook)
     if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      const { currentUser } = await import("@clerk/nextjs/server").then(m => m.auth());
+
+      // Fetch Clerk user data
+      const clerkUser = await fetch(`https://api.clerk.com/v1/users/${userId}`, {
+        headers: {
+          Authorization: `Bearer ${process.env.CLERK_SECRET_KEY}`,
+        },
+      }).then(r => r.json()).catch(() => null);
+
+      const email = clerkUser?.email_addresses?.[0]?.email_address || `${userId}@placeholder.com`;
+      const name = `${clerkUser?.first_name || ""} ${clerkUser?.last_name || ""}`.trim() || null;
+      const slug = email.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "-");
+
+      user = await db.user.create({
+        data: {
+          clerkId: userId,
+          email,
+          name,
+          onboardingCompleted: false,
+          onboardingStep: 0,
+          bookingLinks: {
+            create: {
+              slug,
+              title: "Schedule a meeting",
+              duration: 30,
+            },
+          },
+        },
+        include: {
+          userStages: {
+            where: { isEnabled: true },
+            orderBy: { order: "asc" },
+          },
+          bookingLinks: {
+            where: { isActive: true },
+            take: 1,
+          },
+          availabilitySlots: {
+            where: { isActive: true },
+            orderBy: { dayOfWeek: "asc" },
+          },
+        },
+      });
     }
 
     // Check if Google is connected
