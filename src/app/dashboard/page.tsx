@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { isStageAdvancement, CELEBRATION_STAGES, STAGE_DEFINITIONS } from "@/lib/stages";
+import { isStageAdvancement, CELEBRATION_STAGES } from "@/lib/stages";
 import Tour from "@/components/Tour";
 import Header from "@/components/Header";
 
@@ -104,20 +104,9 @@ const fireConfetti = async (isBigCelebration: boolean = false) => {
 function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // Default stages that always show
-  const DEFAULT_STAGES: Stage[] = STAGE_DEFINITIONS
-    .filter(s => s.defaultEnabled)
-    .map((s, i) => ({
-      id: `stage-${s.key}`,
-      stageKey: s.key,
-      name: s.name,
-      emoji: s.emoji,
-      color: s.color,
-      order: i,
-      isEnabled: true,
-    }));
 
-  const [stages, setStages] = useState<Stage[]>(DEFAULT_STAGES);
+  // Start with empty stages - will be populated from database only
+  const [stages, setStages] = useState<Stage[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [showCompanyModal, setShowCompanyModal] = useState(false);
@@ -162,30 +151,20 @@ function DashboardContent() {
           fetch("/api/companies"),
         ]);
 
-        // Try to get stages from API response (even if error status)
-        try {
-          const data = await stagesRes.json();
-          const enabledStages = (data.stages || []).filter((s: Stage) => s.isEnabled);
-          if (enabledStages.length > 0) {
+        // Get stages from API - only use real database stages
+        if (stagesRes.ok) {
+          try {
+            const data = await stagesRes.json();
+            // Only use stages from the database (with real IDs)
+            const enabledStages = (data.stages || [])
+              .filter((s: Stage) => s.isEnabled)
+              .sort((a: Stage, b: Stage) => a.order - b.order);
             setStages(enabledStages);
+          } catch {
+            console.error("Failed to parse stages response");
           }
-          // If no stages but we have stageLibrary, use defaults from that
-          else if (data.stageLibrary && data.stageLibrary.length > 0) {
-            const libraryStages = data.stageLibrary
-              .filter((s: { defaultEnabled: boolean }) => s.defaultEnabled)
-              .map((s: { key: string; name: string; emoji: string; color: string }, i: number) => ({
-                id: `lib-${s.key}`,
-                stageKey: s.key,
-                name: s.name,
-                emoji: s.emoji,
-                color: s.color,
-                order: i,
-                isEnabled: true,
-              }));
-            setStages(libraryStages);
-          }
-        } catch {
-          // JSON parse failed, keep default stages
+        } else {
+          console.error("Failed to fetch stages:", stagesRes.status);
         }
 
         if (companiesRes.ok) {

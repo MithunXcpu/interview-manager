@@ -95,6 +95,8 @@ export async function GET() {
   }
 }
 
+const MAX_STAGES = 10;
+
 export async function POST(request: NextRequest) {
   try {
     const { userId } = await auth();
@@ -130,9 +132,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get current max order
+    // Check if stage already exists and is enabled
+    const existingStage = await db.userStage.findUnique({
+      where: {
+        userId_stageKey: {
+          userId: user.id,
+          stageKey: stageKey,
+        },
+      },
+    });
+
+    // If stage exists and is already enabled, just return it
+    if (existingStage?.isEnabled) {
+      return NextResponse.json({ stage: existingStage }, { status: 200 });
+    }
+
+    // Enforce MAX_STAGES limit (only count enabled stages)
+    const enabledCount = await db.userStage.count({
+      where: { userId: user.id, isEnabled: true },
+    });
+
+    if (enabledCount >= MAX_STAGES) {
+      return NextResponse.json(
+        { error: `Maximum ${MAX_STAGES} stages allowed` },
+        { status: 400 }
+      );
+    }
+
+    // Get current max order among enabled stages
     const maxOrderStage = await db.userStage.findFirst({
-      where: { userId: user.id },
+      where: { userId: user.id, isEnabled: true },
       orderBy: { order: "desc" },
     });
     const newOrder = (maxOrderStage?.order ?? -1) + 1;

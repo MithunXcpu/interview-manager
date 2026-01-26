@@ -232,6 +232,7 @@ function SettingsContent() {
         .map(s => s.key);
 
       let currentCount = userStages.filter(s => s.isEnabled).length;
+      let addedCount = 0;
 
       // Add each default stage that isn't already enabled
       for (const stageKey of defaultStageKeys) {
@@ -259,11 +260,30 @@ function SettingsContent() {
               return [...prev, data.stage];
             });
             currentCount++;
+            addedCount++;
+          } else {
+            const errorData = await response.json();
+            if (errorData.error?.includes("Maximum")) {
+              alert(`Maximum ${MAX_STAGES} stages allowed.`);
+              break;
+            }
+          }
+        }
+      }
+
+      if (addedCount > 0) {
+        // Refetch to ensure consistency
+        const refetchRes = await fetch("/api/stages");
+        if (refetchRes.ok) {
+          const data = await refetchRes.json();
+          if (data.stages) {
+            setUserStages(data.stages);
           }
         }
       }
     } catch (error) {
       console.error("Error adding default stages:", error);
+      alert("Failed to add default stages. Please try again.");
     }
   };
 
@@ -277,15 +297,22 @@ function SettingsContent() {
     if (existingEnabledStage) {
       // Disable existing enabled stage
       try {
-        await fetch(`/api/stages?id=${existingEnabledStage.id}`, { method: "DELETE" });
-        setUserStages(prev => prev.map(s =>
-          s.id === existingEnabledStage.id ? { ...s, isEnabled: false } : s
-        ));
+        const response = await fetch(`/api/stages?id=${existingEnabledStage.id}`, { method: "DELETE" });
+        if (response.ok) {
+          setUserStages(prev => prev.map(s =>
+            s.id === existingEnabledStage.id ? { ...s, isEnabled: false } : s
+          ));
+        } else {
+          const data = await response.json();
+          console.error("Failed to disable stage:", data.error);
+          alert("Failed to remove stage. Please try again.");
+        }
       } catch (error) {
         console.error("Error disabling stage:", error);
+        alert("Failed to remove stage. Please try again.");
       }
     } else {
-      // Check max stage limit before enabling
+      // Check max stage limit before enabling (backend also enforces this)
       const currentEnabledCount = userStages.filter(s => s.isEnabled).length;
       if (currentEnabledCount >= MAX_STAGES) {
         alert(`Maximum ${MAX_STAGES} stages allowed. Please remove a stage first.`);
@@ -312,9 +339,14 @@ function SettingsContent() {
             }
             return [...prev, data.stage];
           });
+        } else {
+          const data = await response.json();
+          console.error("Failed to enable stage:", data.error);
+          alert(data.error || "Failed to add stage. Please try again.");
         }
       } catch (error) {
         console.error("Error enabling stage:", error);
+        alert("Failed to add stage. Please try again.");
       }
     }
   };
@@ -349,15 +381,28 @@ function SettingsContent() {
 
     // Persist to backend
     try {
-      await fetch("/api/stages", {
+      const response = await fetch("/api/stages", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           stages: updatedStages.map(s => ({ id: s.id, order: s.order, isEnabled: s.isEnabled })),
         }),
       });
+
+      if (!response.ok) {
+        // Revert on error - refetch from server
+        const refetchRes = await fetch("/api/stages");
+        if (refetchRes.ok) {
+          const data = await refetchRes.json();
+          if (data.stages) {
+            setUserStages(data.stages);
+          }
+        }
+        alert("Failed to save stage order. Please try again.");
+      }
     } catch (error) {
       console.error("Error reordering stages:", error);
+      alert("Failed to save stage order. Please try again.");
     }
 
     setDraggedStage(null);
