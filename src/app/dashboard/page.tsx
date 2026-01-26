@@ -162,15 +162,31 @@ function DashboardContent() {
           fetch("/api/companies"),
         ]);
 
-        if (stagesRes.ok) {
+        // Try to get stages from API response (even if error status)
+        try {
           const data = await stagesRes.json();
           const enabledStages = (data.stages || []).filter((s: Stage) => s.isEnabled);
           if (enabledStages.length > 0) {
             setStages(enabledStages);
           }
-          // If no stages from API, keep the default stages that were set initially
+          // If no stages but we have stageLibrary, use defaults from that
+          else if (data.stageLibrary && data.stageLibrary.length > 0) {
+            const libraryStages = data.stageLibrary
+              .filter((s: { defaultEnabled: boolean }) => s.defaultEnabled)
+              .map((s: { key: string; name: string; emoji: string; color: string }, i: number) => ({
+                id: `lib-${s.key}`,
+                stageKey: s.key,
+                name: s.name,
+                emoji: s.emoji,
+                color: s.color,
+                order: i,
+                isEnabled: true,
+              }));
+            setStages(libraryStages);
+          }
+        } catch {
+          // JSON parse failed, keep default stages
         }
-        // If API fails, keep the default stages that were set initially
 
         if (companiesRes.ok) {
           const data = await companiesRes.json();
