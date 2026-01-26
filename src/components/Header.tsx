@@ -18,9 +18,9 @@ export default function Header({ showBookingLink, bookingLink }: HeaderProps) {
   const pathname = usePathname();
 
   const navItems = [
-    { href: "/dashboard", label: "Pipeline" },
-    { href: "/emails", label: "Emails" },
-    { href: "/calendar", label: "Calendar" },
+    { href: "/dashboard", label: "Pipeline", icon: "📋" },
+    { href: "/emails", label: "Emails", icon: "📧" },
+    { href: "/calendar", label: "Calendar", icon: "📅" },
   ];
 
   return (
@@ -44,13 +44,14 @@ export default function Header({ showBookingLink, bookingLink }: HeaderProps) {
                   key={item.href}
                   href={item.href}
                   data-tour={item.href === "/emails" ? "nav-emails" : undefined}
-                  className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                  className={`px-2 sm:px-3 py-1.5 rounded-lg text-sm transition-colors ${
                     isActive
                       ? "bg-[var(--primary)]/20 text-[var(--primary)]"
                       : "text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]"
                   }`}
                 >
-                  {item.label}
+                  <span className="sm:hidden">{item.icon}</span>
+                  <span className="hidden sm:inline">{item.label}</span>
                 </Link>
               );
             })}
@@ -58,15 +59,15 @@ export default function Header({ showBookingLink, bookingLink }: HeaderProps) {
         </div>
 
         {/* Right: Booking Link, Settings Icon, User */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           {showBookingLink && bookingLink && (
-            <div className="hidden md:flex items-center gap-2 text-sm text-[var(--muted)]">
+            <div className="hidden lg:flex items-center gap-2 text-sm text-[var(--muted)]">
               <button
                 onClick={() => navigator.clipboard.writeText(bookingLink)}
                 className="px-3 py-1.5 bg-[var(--secondary)] rounded-lg hover:bg-[var(--primary)]/20 transition-colors flex items-center gap-2"
               >
                 <span>🔗</span>
-                <span className="hidden lg:inline">Copy Booking Link</span>
+                <span>Copy Booking Link</span>
               </button>
             </div>
           )}
