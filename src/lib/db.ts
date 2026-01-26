@@ -12,4 +12,7 @@ export const prisma =
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
+// Alias for imports using { db }
+export const db = prisma;
+
 export default prisma;

@@ -85,6 +85,7 @@ export async function GET(request: NextRequest) {
         // If sync requested, store emails in database
         if (sync && gmailMessages.length > 0) {
           for (const msg of gmailMessages) {
+            if (!msg.id) continue;
             try {
               const fullEmail = await getEmail(
                 user.googleAccessToken,

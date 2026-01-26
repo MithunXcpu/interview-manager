@@ -35,8 +35,10 @@ export async function GET(request: NextRequest) {
 
     if (type === "events") {
       // Get events from Google Calendar
-      const timeMin = searchParams.get("timeMin") || new Date().toISOString();
-      const timeMax = searchParams.get("timeMax") || addDays(new Date(), 14).toISOString();
+      const timeMinParam = searchParams.get("timeMin");
+      const timeMaxParam = searchParams.get("timeMax");
+      const timeMin = timeMinParam ? new Date(timeMinParam) : new Date();
+      const timeMax = timeMaxParam ? new Date(timeMaxParam) : addDays(new Date(), 14);
 
       try {
         const events = await listCalendarEvents(
@@ -65,15 +67,20 @@ export async function GET(request: NextRequest) {
       });
 
       // Build date range
-      const timeMin = startOfDay(new Date()).toISOString();
-      const timeMax = endOfDay(addDays(new Date(), days)).toISOString();
+      const timeMin = startOfDay(new Date());
+      const timeMax = endOfDay(addDays(new Date(), days));
 
       try {
-        const busySlots = await getFreeBusy(
+        const rawBusySlots = await getFreeBusy(
           user.googleAccessToken,
           timeMin,
           timeMax,
           user.googleRefreshToken
+        );
+        // Filter out slots with undefined start/end
+        const busySlots = rawBusySlots.filter(
+          (slot): slot is { start: string; end: string } =>
+            typeof slot.start === 'string' && typeof slot.end === 'string'
         );
 
         // Generate available slots based on user preferences and busy times
@@ -187,12 +194,12 @@ export async function POST(request: NextRequest) {
         const event = await createCalendarEvent(
           user.googleAccessToken,
           {
-            title,
+            summary: title,
             description,
-            startTime,
-            endTime,
+            start: new Date(startTime),
+            end: new Date(endTime),
             attendees,
-            createMeet: createMeet ?? true,
+            conferenceData: createMeet ?? true,
           },
           user.googleRefreshToken
         );

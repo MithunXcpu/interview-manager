@@ -71,7 +71,51 @@ export async function getEmail(accessToken: string, messageId: string, refreshTo
     id: messageId,
     format: "full",
   });
-  return response.data;
+
+  const message = response.data;
+
+  // Extract headers
+  const headers = message.payload?.headers || [];
+  const getHeader = (name: string) =>
+    headers.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value || "";
+
+  // Extract body
+  let body = "";
+  const extractBody = (part: typeof message.payload): string => {
+    if (part?.body?.data) {
+      return Buffer.from(part.body.data, "base64").toString("utf-8");
+    }
+    if (part?.parts) {
+      for (const p of part.parts) {
+        if (p.mimeType === "text/plain" || p.mimeType === "text/html") {
+          const text = extractBody(p);
+          if (text) return text;
+        }
+      }
+      // Try first part if no text found
+      for (const p of part.parts) {
+        const text = extractBody(p);
+        if (text) return text;
+      }
+    }
+    return "";
+  };
+
+  if (message.payload) {
+    body = extractBody(message.payload);
+  }
+
+  return {
+    id: message.id || "",
+    threadId: message.threadId || "",
+    labelIds: message.labelIds || [],
+    snippet: message.snippet || "",
+    from: getHeader("From"),
+    to: getHeader("To"),
+    subject: getHeader("Subject"),
+    date: getHeader("Date"),
+    body,
+  };
 }
 
 export async function sendEmail(

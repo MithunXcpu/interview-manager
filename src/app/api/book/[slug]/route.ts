@@ -36,20 +36,25 @@ export async function GET(
 
     // Build available slots based on user's availability preferences
     const slots: { date: string; times: string[] }[] = [];
-    const timeMin = startOfDay(new Date()).toISOString();
-    const timeMax = endOfDay(addDays(new Date(), days)).toISOString();
+    const timeMinDate = startOfDay(new Date());
+    const timeMaxDate = endOfDay(addDays(new Date(), days));
 
     // Get busy times from Google Calendar if connected
     let busySlots: { start: string; end: string }[] = [];
 
     if (user.googleAccessToken && user.googleRefreshToken) {
       try {
-        busySlots = await getFreeBusy(
+        const rawBusySlots = await getFreeBusy(
           user.googleAccessToken,
-          timeMin,
-          timeMax,
+          timeMinDate,
+          timeMaxDate,
           user.googleRefreshToken
         );
+        // Filter out any slots with undefined start/end
+        busySlots = rawBusySlots
+          .filter((slot): slot is { start: string; end: string } =>
+            typeof slot.start === 'string' && typeof slot.end === 'string'
+          );
       } catch (error) {
         console.error("Error fetching busy slots:", error);
         // Continue without busy times
@@ -192,12 +197,12 @@ ${notes ? `\nNotes:\n${notes}` : ""}`;
         calendarEvent = await createCalendarEvent(
           user.googleAccessToken,
           {
-            title: eventTitle,
+            summary: eventTitle,
             description: eventDescription,
-            startTime: startDateTime.toISOString(),
-            endTime: endDateTime.toISOString(),
+            start: startDateTime,
+            end: endDateTime,
             attendees: [email],
-            createMeet,
+            conferenceData: createMeet,
           },
           user.googleRefreshToken
         );

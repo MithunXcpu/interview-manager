@@ -31,8 +31,6 @@ export async function GET() {
 
     // Create user if not found (fallback for users who signed up before webhook)
     if (!user) {
-      const { currentUser } = await import("@clerk/nextjs/server").then(m => m.auth());
-
       // Fetch Clerk user data
       const clerkUser = await fetch(`https://api.clerk.com/v1/users/${userId}`, {
         headers: {

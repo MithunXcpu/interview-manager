@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import ProgressBar from "@/components/onboarding/ProgressBar";
 import StepProfile from "@/components/onboarding/StepProfile";
@@ -37,7 +37,7 @@ const DEFAULT_AVAILABILITY: Record<number, DayAvailability> = {
   5: { enabled: true, slots: [{ startTime: "09:00", endTime: "17:00" }] },
 };
 
-export default function OnboardingPage() {
+function OnboardingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -235,5 +235,17 @@ export default function OnboardingPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function OnboardingPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full" />
+      </div>
+    }>
+      <OnboardingContent />
+    </Suspense>
   );
 }
