@@ -224,15 +224,22 @@ function SettingsContent() {
     }));
   };
 
-  // Add all default stages
+  // Add all default stages (respecting max limit)
   const addDefaultStages = async () => {
     try {
       const defaultStageKeys = STAGE_DEFINITIONS
         .filter(s => s.defaultEnabled)
         .map(s => s.key);
 
+      let currentCount = userStages.filter(s => s.isEnabled).length;
+
       // Add each default stage that isn't already enabled
       for (const stageKey of defaultStageKeys) {
+        if (currentCount >= MAX_STAGES) {
+          console.log(`Reached max stage limit (${MAX_STAGES})`);
+          break;
+        }
+
         const existingStage = userStages.find(s => s.stageKey === stageKey && s.isEnabled);
         if (!existingStage) {
           const response = await fetch("/api/stages", {
@@ -242,7 +249,16 @@ function SettingsContent() {
           });
           if (response.ok) {
             const data = await response.json();
-            setUserStages(prev => [...prev.filter(s => s.stageKey !== stageKey), data.stage]);
+            setUserStages(prev => {
+              const existingIndex = prev.findIndex(s => s.stageKey === stageKey);
+              if (existingIndex >= 0) {
+                const updated = [...prev];
+                updated[existingIndex] = data.stage;
+                return updated;
+              }
+              return [...prev, data.stage];
+            });
+            currentCount++;
           }
         }
       }
@@ -251,22 +267,32 @@ function SettingsContent() {
     }
   };
 
+  const MAX_STAGES = 10;
+
   // Stage management functions
   const toggleStage = async (stageKey: string) => {
-    const existingStage = userStages.find(s => s.stageKey === stageKey);
+    // Check if stage exists AND is currently enabled
+    const existingEnabledStage = userStages.find(s => s.stageKey === stageKey && s.isEnabled);
 
-    if (existingStage) {
-      // Disable existing stage
+    if (existingEnabledStage) {
+      // Disable existing enabled stage
       try {
-        await fetch(`/api/stages?id=${existingStage.id}`, { method: "DELETE" });
+        await fetch(`/api/stages?id=${existingEnabledStage.id}`, { method: "DELETE" });
         setUserStages(prev => prev.map(s =>
-          s.id === existingStage.id ? { ...s, isEnabled: false } : s
+          s.id === existingEnabledStage.id ? { ...s, isEnabled: false } : s
         ));
       } catch (error) {
         console.error("Error disabling stage:", error);
       }
     } else {
-      // Enable new stage
+      // Check max stage limit before enabling
+      const currentEnabledCount = userStages.filter(s => s.isEnabled).length;
+      if (currentEnabledCount >= MAX_STAGES) {
+        alert(`Maximum ${MAX_STAGES} stages allowed. Please remove a stage first.`);
+        return;
+      }
+
+      // Enable stage (create new or re-enable existing disabled)
       try {
         const response = await fetch("/api/stages", {
           method: "POST",
@@ -275,7 +301,17 @@ function SettingsContent() {
         });
         if (response.ok) {
           const data = await response.json();
-          setUserStages(prev => [...prev, data.stage]);
+          // Update or add the stage in local state
+          setUserStages(prev => {
+            const existingIndex = prev.findIndex(s => s.stageKey === stageKey);
+            if (existingIndex >= 0) {
+              // Replace existing disabled stage with enabled one from server
+              const updated = [...prev];
+              updated[existingIndex] = data.stage;
+              return updated;
+            }
+            return [...prev, data.stage];
+          });
         }
       } catch (error) {
         console.error("Error enabling stage:", error);
@@ -509,8 +545,17 @@ function SettingsContent() {
                 {/* Active Stages */}
                 <div className="mb-8">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-semibold">Active Stages (drag to reorder)</h3>
-                    {enabledStages.length > 0 && (
+                    <div className="flex items-center gap-3">
+                      <h3 className="font-semibold">Active Stages</h3>
+                      <span className={`text-sm px-2 py-0.5 rounded-full ${
+                        enabledStages.length >= MAX_STAGES
+                          ? "bg-red-500/20 text-red-400"
+                          : "bg-[var(--secondary)] text-[var(--muted)]"
+                      }`}>
+                        {enabledStages.length}/{MAX_STAGES}
+                      </span>
+                    </div>
+                    {enabledStages.length > 0 && enabledStages.length < MAX_STAGES && (
                       <button
                         onClick={addDefaultStages}
                         className="text-sm text-[var(--primary)] hover:underline"
@@ -519,6 +564,7 @@ function SettingsContent() {
                       </button>
                     )}
                   </div>
+                  <p className="text-sm text-[var(--muted)] mb-4">Drag to reorder stages</p>
                   <div className="space-y-2">
                     {enabledStages.map((stage, index) => (
                       <div
@@ -556,18 +602,22 @@ function SettingsContent() {
                 <div>
                   <h3 className="font-semibold mb-4">Stage Library</h3>
                   <p className="text-sm text-[var(--muted)] mb-4">
-                    Click to add stages to your pipeline
+                    {enabledStages.length >= MAX_STAGES
+                      ? `Maximum ${MAX_STAGES} stages reached. Remove a stage to add more.`
+                      : "Click to add stages to your pipeline"}
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {STAGE_DEFINITIONS.map((stageDef) => {
                       const isEnabled = enabledStageKeys.has(stageDef.key);
+                      const isMaxReached = enabledStages.length >= MAX_STAGES;
+                      const isDisabled = isEnabled || isMaxReached;
                       return (
                         <button
                           key={stageDef.key}
-                          onClick={() => !isEnabled && toggleStage(stageDef.key)}
-                          disabled={isEnabled}
+                          onClick={() => !isDisabled && toggleStage(stageDef.key)}
+                          disabled={isDisabled}
                           className={`p-3 rounded-lg border text-left transition-all ${
-                            isEnabled
+                            isDisabled
                               ? "opacity-50 cursor-not-allowed bg-[var(--secondary)] border-[var(--border)]"
                               : "hover:border-[var(--primary)] hover:bg-[var(--primary)]/10 border-[var(--border)]"
                           }`}
