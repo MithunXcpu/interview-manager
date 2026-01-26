@@ -205,13 +205,25 @@ export default function Dashboard() {
       {/* Header */}
       <header className="border-b border-[var(--border)] sticky top-0 bg-[var(--background)] z-40">
         <div className="max-w-[1800px] mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-6">
             <Link href="/" className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
                 <span>📋</span>
               </div>
               <span className="font-bold hidden sm:block">Interview Manager</span>
             </Link>
+
+            <nav className="flex items-center gap-1">
+              <Link href="/dashboard" className="px-3 py-1.5 rounded-lg text-sm bg-[var(--primary)]/20 text-[var(--primary)]">
+                Pipeline
+              </Link>
+              <Link href="/emails" className="px-3 py-1.5 rounded-lg text-sm text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]">
+                Emails
+              </Link>
+              <Link href="/settings" className="px-3 py-1.5 rounded-lg text-sm text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]">
+                Settings
+              </Link>
+            </nav>
           </div>
 
           <div className="flex items-center gap-3">
