@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { STAGE_DEFINITIONS } from "@/lib/stages";
 
@@ -81,10 +81,12 @@ Best regards,
 ];
 
 export default function SettingsPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab") as TabKey | null;
 
   const [activeTab, setActiveTab] = useState<TabKey>(tabParam || "availability");
+  const [resettingOnboarding, setResettingOnboarding] = useState(false);
   const [availability, setAvailability] = useState<Availability>(DEFAULT_AVAILABILITY);
   const [templates, setTemplates] = useState<EmailTemplate[]>(DEFAULT_TEMPLATES);
   const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null);
@@ -799,6 +801,37 @@ export default function SettingsPage() {
                       </select>
                     </div>
                   </div>
+                </div>
+
+                {/* Reset Onboarding Section */}
+                <div className="card mt-6 border-orange-500/30">
+                  <h3 className="font-semibold mb-2">Re-run Onboarding</h3>
+                  <p className="text-sm text-[var(--muted)] mb-4">
+                    Go through the onboarding flow again to update your profile, availability, and booking link.
+                  </p>
+                  <button
+                    onClick={async () => {
+                      setResettingOnboarding(true);
+                      try {
+                        await fetch("/api/user", {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            onboardingCompleted: false,
+                            onboardingStep: 0,
+                          }),
+                        });
+                        router.push("/onboarding");
+                      } catch (error) {
+                        console.error("Error resetting onboarding:", error);
+                        setResettingOnboarding(false);
+                      }
+                    }}
+                    disabled={resettingOnboarding}
+                    className="btn btn-secondary"
+                  >
+                    {resettingOnboarding ? "Redirecting..." : "Start Onboarding Again"}
+                  </button>
                 </div>
               </div>
             )}
