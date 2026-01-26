@@ -44,24 +44,74 @@ async function getAuthenticatedUser() {
 }
 
 export async function GET() {
-  try {
-    const authResult = await getAuthenticatedUser();
-    if ("error" in authResult) {
-      return NextResponse.json({ error: authResult.error }, { status: authResult.status });
-    }
-    const { user } = authResult;
+  let debugInfo: Record<string, unknown> = { step: "init" };
 
-    // Fetch ALL user's stages (both enabled and disabled)
+  try {
+    // Step 1: Get auth
+    debugInfo.step = "auth";
+    const { userId: clerkId } = await auth();
+    debugInfo.clerkId = clerkId || null;
+
+    if (!clerkId) {
+      return NextResponse.json({
+        error: "Unauthorized - no clerkId from auth()",
+        debug: debugInfo,
+        stages: [],
+        stageLibrary: STAGE_DEFINITIONS
+      }, { status: 401 });
+    }
+
+    // Step 2: Find user
+    debugInfo.step = "findUser";
+    let user = await db.user.findUnique({
+      where: { clerkId },
+    });
+    debugInfo.userFound = !!user;
+    debugInfo.userId = user?.id || null;
+
+    // Step 3: Create user if not found
+    if (!user) {
+      debugInfo.step = "createUser";
+      try {
+        user = await db.user.create({
+          data: {
+            clerkId,
+            email: `${clerkId}@temp.local`,
+            onboardingCompleted: false,
+            onboardingStep: 0,
+          },
+        });
+        debugInfo.userCreated = true;
+        debugInfo.userId = user.id;
+      } catch (createError) {
+        debugInfo.createError = String(createError);
+        // Try to find again (race condition)
+        user = await db.user.findUnique({ where: { clerkId } });
+        debugInfo.userFoundAfterRetry = !!user;
+        debugInfo.userId = user?.id || null;
+
+        if (!user) {
+          return NextResponse.json({
+            error: "Failed to create or find user",
+            debug: debugInfo,
+            stages: [],
+            stageLibrary: STAGE_DEFINITIONS
+          }, { status: 500 });
+        }
+      }
+    }
+
+    // Step 4: Fetch stages
+    debugInfo.step = "fetchStages";
     let stages = await db.userStage.findMany({
       where: { userId: user.id },
       orderBy: { order: "asc" },
     });
+    debugInfo.stagesFound = stages.length;
 
-    console.log(`Stages API GET: Found ${stages.length} stages for user ${user.id}`);
-
-    // Create default stages if none exist
+    // Step 5: Create default stages if none exist
     if (stages.length === 0) {
-      console.log("Stages API: Creating default stages...");
+      debugInfo.step = "createDefaultStages";
       const defaultStages = STAGE_DEFINITIONS
         .filter(s => s.defaultEnabled)
         .map((stage, index) => ({
@@ -73,35 +123,45 @@ export async function GET() {
           order: index,
           isEnabled: true,
         }));
+      debugInfo.defaultStagesToCreate = defaultStages.length;
 
       try {
         await db.userStage.createMany({
           data: defaultStages,
           skipDuplicates: true,
         });
+        debugInfo.defaultStagesCreated = true;
 
         stages = await db.userStage.findMany({
           where: { userId: user.id },
           orderBy: { order: "asc" },
         });
-        console.log(`Stages API: Created ${stages.length} default stages`);
+        debugInfo.stagesAfterCreate = stages.length;
       } catch (stageError) {
-        console.error("Stages API: Error creating stages:", stageError);
+        debugInfo.stageCreateError = String(stageError);
+        // Continue with empty stages rather than failing
         stages = [];
       }
     }
 
-    // Return all stages and the library
+    // Success
+    debugInfo.step = "success";
     return NextResponse.json({
       stages,
       stageLibrary: STAGE_DEFINITIONS,
+      debug: debugInfo,
     });
   } catch (error) {
-    console.error("Stages API GET error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch stages", stages: [], stageLibrary: STAGE_DEFINITIONS },
-      { status: 500 }
-    );
+    const err = error as Error;
+    console.error("Stages API GET error:", err);
+    return NextResponse.json({
+      error: "Failed to fetch stages",
+      errorMessage: err.message,
+      errorStack: err.stack?.split("\n").slice(0, 5),
+      debug: debugInfo,
+      stages: [],
+      stageLibrary: STAGE_DEFINITIONS,
+    }, { status: 500 });
   }
 }
 
