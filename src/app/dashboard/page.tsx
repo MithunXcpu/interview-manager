@@ -156,20 +156,44 @@ function DashboardContent() {
             setStages(enabledStages);
             console.log("Loaded stages:", enabledStages.length);
           } else {
-            // Use default stages as fallback
-            console.log("No stages found, using defaults");
-            const defaultStages = STAGE_DEFINITIONS
-              .filter(s => s.defaultEnabled)
-              .map((s, i) => ({
-                id: `default-${s.key}`,
-                stageKey: s.key,
-                name: s.name,
-                emoji: s.emoji,
-                color: s.color,
-                order: i,
-                isEnabled: true,
-              }));
-            setStages(defaultStages);
+            // No stages found - create default stages
+            console.log("No stages found, creating defaults...");
+            const defaultStageKeys = STAGE_DEFINITIONS.filter(s => s.defaultEnabled);
+            const createdStages: Stage[] = [];
+
+            for (const stageDef of defaultStageKeys) {
+              try {
+                const createRes = await fetch("/api/stages", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ stageKey: stageDef.key }),
+                });
+                if (createRes.ok) {
+                  const createData = await createRes.json();
+                  createdStages.push(createData.stage);
+                }
+              } catch (e) {
+                console.error("Error creating stage:", stageDef.key, e);
+              }
+            }
+
+            if (createdStages.length > 0) {
+              setStages(createdStages.sort((a, b) => a.order - b.order));
+            } else {
+              // Fallback to client-side defaults
+              const defaultStages = STAGE_DEFINITIONS
+                .filter(s => s.defaultEnabled)
+                .map((s, i) => ({
+                  id: `default-${s.key}`,
+                  stageKey: s.key,
+                  name: s.name,
+                  emoji: s.emoji,
+                  color: s.color,
+                  order: i,
+                  isEnabled: true,
+                }));
+              setStages(defaultStages);
+            }
           }
         } else {
           console.error("Failed to fetch stages:", stagesRes.status);

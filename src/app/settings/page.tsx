@@ -218,6 +218,33 @@ function SettingsContent() {
     }));
   };
 
+  // Add all default stages
+  const addDefaultStages = async () => {
+    try {
+      const defaultStageKeys = STAGE_DEFINITIONS
+        .filter(s => s.defaultEnabled)
+        .map(s => s.key);
+
+      // Add each default stage that isn't already enabled
+      for (const stageKey of defaultStageKeys) {
+        const existingStage = userStages.find(s => s.stageKey === stageKey && s.isEnabled);
+        if (!existingStage) {
+          const response = await fetch("/api/stages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ stageKey }),
+          });
+          if (response.ok) {
+            const data = await response.json();
+            setUserStages(prev => [...prev.filter(s => s.stageKey !== stageKey), data.stage]);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error adding default stages:", error);
+    }
+  };
+
   // Stage management functions
   const toggleStage = async (stageKey: string) => {
     const existingStage = userStages.find(s => s.stageKey === stageKey);
@@ -457,9 +484,35 @@ function SettingsContent() {
                   Customize which stages appear in your pipeline and their order.
                 </p>
 
+                {/* Quick Actions */}
+                {enabledStages.length === 0 && (
+                  <div className="mb-8 p-6 bg-[var(--primary)]/10 border border-[var(--primary)]/30 rounded-xl">
+                    <h3 className="font-semibold mb-2">Get Started</h3>
+                    <p className="text-sm text-[var(--muted)] mb-4">
+                      You don't have any pipeline stages yet. Add the recommended default stages to get started.
+                    </p>
+                    <button
+                      onClick={addDefaultStages}
+                      className="btn btn-primary"
+                    >
+                      + Add Default Stages
+                    </button>
+                  </div>
+                )}
+
                 {/* Active Stages */}
                 <div className="mb-8">
-                  <h3 className="font-semibold mb-4">Active Stages (drag to reorder)</h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-semibold">Active Stages (drag to reorder)</h3>
+                    {enabledStages.length > 0 && (
+                      <button
+                        onClick={addDefaultStages}
+                        className="text-sm text-[var(--primary)] hover:underline"
+                      >
+                        + Add Missing Defaults
+                      </button>
+                    )}
+                  </div>
                   <div className="space-y-2">
                     {enabledStages.map((stage, index) => (
                       <div
