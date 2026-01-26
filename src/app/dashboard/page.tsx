@@ -1,16 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import { isStageAdvancement, CELEBRATION_STAGES } from "@/lib/stages";
 import Tour from "@/components/Tour";
-
-const ClerkUserButton = dynamic(
-  () => import("@clerk/nextjs").then(mod => mod.UserButton),
-  { ssr: false, loading: () => <div className="w-8 h-8 rounded-full bg-[var(--secondary)]" /> }
-);
+import Header from "@/components/Header";
 
 interface Stage {
   id: string;
@@ -106,8 +101,9 @@ const fireConfetti = async (isBigCelebration: boolean = false) => {
   }
 };
 
-export default function Dashboard() {
+function DashboardContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [stages, setStages] = useState<Stage[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
@@ -122,14 +118,35 @@ export default function Dashboard() {
 
   const bookingLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/book/${bookingSlug}`;
 
+  // Check if user just completed onboarding
+  const justCompletedOnboarding = searchParams.get("welcome") === "true";
+
   // Fetch stages and companies
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [stagesRes, companiesRes, userRes] = await Promise.all([
+        // First fetch user data - this creates the user and default stages if they don't exist
+        const userRes = await fetch("/api/user");
+        if (!userRes.ok) {
+          console.error("Failed to fetch user data");
+          setIsLoading(false);
+          return;
+        }
+
+        const userData = await userRes.json();
+
+        // Check if onboarding is completed
+        if (!userData.user.onboardingCompleted) {
+          router.push("/onboarding");
+          return;
+        }
+
+        setBookingSlug(userData.user.bookingLink?.slug || "me");
+
+        // Now fetch stages and companies (user exists at this point)
+        const [stagesRes, companiesRes] = await Promise.all([
           fetch("/api/stages"),
           fetch("/api/companies"),
-          fetch("/api/user"),
         ]);
 
         if (stagesRes.ok) {
@@ -148,21 +165,11 @@ export default function Dashboard() {
           previousStagesRef.current = stageMap;
         }
 
-        if (userRes.ok) {
-          const data = await userRes.json();
-          // Check if onboarding is completed
-          if (!data.user.onboardingCompleted) {
-            router.push("/onboarding");
-            return;
-          }
-          setBookingSlug(data.user.bookingLink?.slug || "me");
-
-          // Show tour for first-time users (check localStorage)
-          const hasSeenTour = localStorage.getItem("hasSeenDashboardTour");
-          if (!hasSeenTour) {
-            // Small delay to let the UI render first
-            setTimeout(() => setShowTour(true), 500);
-          }
+        // Show tour for first-time users or when just completed onboarding
+        const hasSeenTour = localStorage.getItem("hasSeenDashboardTour");
+        if (!hasSeenTour || justCompletedOnboarding) {
+          // Small delay to let the UI render first
+          setTimeout(() => setShowTour(true), 800);
         }
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -172,7 +179,7 @@ export default function Dashboard() {
     };
 
     fetchData();
-  }, [router]);
+  }, [router, justCompletedOnboarding]);
 
   const handleDragStart = (company: Company) => {
     setDraggedCompany(company);
@@ -358,76 +365,36 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
-      {/* Header */}
-      <header className="border-b border-[var(--border)] sticky top-0 bg-[var(--background)] z-40">
-        <div className="max-w-[1800px] mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <Link href="/" className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                <span>📋</span>
-              </div>
-              <span className="font-bold hidden sm:block">Interview Manager</span>
-            </Link>
+      <Header showBookingLink bookingLink={bookingLink} />
 
-            <nav className="flex items-center gap-1">
-              <Link href="/dashboard" className="px-3 py-1.5 rounded-lg text-sm bg-[var(--primary)]/20 text-[var(--primary)]">
-                Pipeline
-              </Link>
-              <Link href="/emails" data-tour="nav-emails" className="px-3 py-1.5 rounded-lg text-sm text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]">
-                Emails
-              </Link>
-              <Link href="/calendar" className="px-3 py-1.5 rounded-lg text-sm text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]">
-                Calendar
-              </Link>
-              <Link href="/settings" data-tour="nav-settings" className="px-3 py-1.5 rounded-lg text-sm text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]">
-                Settings
-              </Link>
-            </nav>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="hidden md:flex items-center gap-2 text-sm text-[var(--muted)]">
-              <span>Booking link:</span>
-              <button
-                onClick={() => navigator.clipboard.writeText(bookingLink)}
-                className="px-3 py-1 bg-[var(--secondary)] rounded-lg hover:bg-[var(--primary)]/20 transition-colors"
-              >
-                📋 Copy Link
-              </button>
-            </div>
-            <Link
-              href="/settings?tab=pipeline"
-              className="btn btn-secondary text-sm hidden md:flex items-center gap-1"
-            >
-              ⚙️ Customize Stages
-            </Link>
-            <button
-              data-tour="add-company"
-              onClick={() => {
-                const defaultStage = stages[0];
-                setSelectedCompany({
-                  id: "",
-                  name: "",
-                  jobTitle: "",
-                  stageId: defaultStage?.id || "",
-                  stage: defaultStage,
-                  priority: "MEDIUM",
-                  totalRounds: 4,
-                  completedRounds: 0,
-                  interviews: [],
-                  interviewers: [],
-                });
-                setEditMode(true);
-                setShowCompanyModal(true);
-              }}
-              className="btn btn-primary text-sm"
-            >
-              + Add Company
-            </button>
-            <ClerkUserButton afterSignOutUrl="/" />
-          </div>
+      {/* Sub-header with actions */}
+      <div className="border-b border-[var(--border)] bg-[var(--background)]">
+        <div className="max-w-[1800px] mx-auto px-4 py-2 flex items-center justify-end gap-3">
+          <button
+            data-tour="add-company"
+            onClick={() => {
+              const defaultStage = stages[0];
+              setSelectedCompany({
+                id: "",
+                name: "",
+                jobTitle: "",
+                stageId: defaultStage?.id || "",
+                stage: defaultStage,
+                priority: "MEDIUM",
+                totalRounds: 4,
+                completedRounds: 0,
+                interviews: [],
+                interviewers: [],
+              });
+              setEditMode(true);
+              setShowCompanyModal(true);
+            }}
+            className="btn btn-primary text-sm"
+          >
+            + Add Company
+          </button>
         </div>
-      </header>
+      </div>
 
       {/* Kanban Board */}
       <main className="max-w-[1800px] mx-auto p-4" data-tour="pipeline">
@@ -858,5 +825,17 @@ export default function Dashboard() {
         }}
       />
     </div>
+  );
+}
+
+export default function Dashboard() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[var(--background)] flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-2 border-[var(--primary)] border-t-transparent rounded-full" />
+      </div>
+    }>
+      <DashboardContent />
+    </Suspense>
   );
 }

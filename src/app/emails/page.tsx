@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { format, addDays } from "date-fns";
+import { format } from "date-fns";
+import Header from "@/components/Header";
 
 interface Company {
   id: string;
@@ -248,7 +249,7 @@ export default function EmailsPage() {
           data: {
             email: {
               from: selectedEmail.from,
-              body: selectedEmail.body,
+              body: selectedEmail.body || selectedEmail.preview,
               subject: selectedEmail.subject,
             },
             bookingLink,
@@ -259,10 +260,23 @@ export default function EmailsPage() {
 
       if (response.ok) {
         const data = await response.json();
-        setReplyText(data.reply);
+        if (data.reply) {
+          setReplyText(data.reply);
+        } else {
+          // Fallback if no reply returned
+          const firstName = selectedEmail.from.split(" ")[0];
+          setReplyText(`Hi ${firstName},\n\nThank you for reaching out! I'm very interested in learning more about this opportunity.\n\nI'm available for a conversation at your convenience. You can book a time directly on my calendar: ${bookingLink}\n\nLooking forward to speaking with you!\n\nBest regards,\n${userName}`);
+        }
+      } else {
+        // Error response - use fallback
+        const firstName = selectedEmail.from.split(" ")[0];
+        setReplyText(`Hi ${firstName},\n\nThank you for reaching out! I'm very interested in learning more about this opportunity.\n\nI'm available for a conversation at your convenience. You can book a time directly on my calendar: ${bookingLink}\n\nLooking forward to speaking with you!\n\nBest regards,\n${userName}`);
       }
     } catch (error) {
       console.error("Error generating AI reply:", error);
+      // Fallback on error
+      const firstName = selectedEmail?.from.split(" ")[0] || "there";
+      setReplyText(`Hi ${firstName},\n\nThank you for reaching out! I'm very interested in learning more about this opportunity.\n\nI'm available for a conversation at your convenience. You can book a time directly on my calendar: ${bookingLink}\n\nLooking forward to speaking with you!\n\nBest regards,\n${userName}`);
     } finally {
       setIsGeneratingAI(false);
     }
@@ -409,59 +423,23 @@ export default function EmailsPage() {
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
-      {/* Header */}
-      <header className="border-b border-[var(--border)] sticky top-0 bg-[var(--background)] z-40">
-        <div className="max-w-[1800px] mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <Link href="/dashboard" className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                <span>📋</span>
-              </div>
-              <span className="font-bold hidden sm:block">Interview Manager</span>
-            </Link>
+      <Header />
 
-            <nav className="flex items-center gap-1">
-              <Link
-                href="/dashboard"
-                className="px-3 py-1.5 rounded-lg text-sm text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]"
-              >
-                Pipeline
-              </Link>
-              <Link
-                href="/emails"
-                className="px-3 py-1.5 rounded-lg text-sm bg-[var(--primary)]/20 text-[var(--primary)]"
-              >
-                Emails
-              </Link>
-              <Link
-                href="/calendar"
-                className="px-3 py-1.5 rounded-lg text-sm text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]"
-              >
-                Calendar
-              </Link>
-              <Link
-                href="/settings"
-                className="px-3 py-1.5 rounded-lg text-sm text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]"
-              >
-                Settings
-              </Link>
-            </nav>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={syncEmails}
-              disabled={isSyncing}
-              className="btn btn-secondary text-sm"
-            >
-              {isSyncing ? "Syncing..." : "🔄 Sync"}
-            </button>
-            <button onClick={() => setShowCompose(true)} className="btn btn-primary text-sm">
-              + Compose
-            </button>
-          </div>
+      {/* Sub-header with actions */}
+      <div className="border-b border-[var(--border)] bg-[var(--background)]">
+        <div className="max-w-[1800px] mx-auto px-4 py-2 flex items-center justify-end gap-2">
+          <button
+            onClick={syncEmails}
+            disabled={isSyncing}
+            className="btn btn-secondary text-sm"
+          >
+            {isSyncing ? "Syncing..." : "🔄 Sync"}
+          </button>
+          <button onClick={() => setShowCompose(true)} className="btn btn-primary text-sm">
+            + Compose
+          </button>
         </div>
-      </header>
+      </div>
 
       <div className="flex h-[calc(100vh-57px)]">
         {/* Email List */}

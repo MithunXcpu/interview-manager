@@ -64,7 +64,7 @@ Reply:`,
       }
 
       case "search_interviewer": {
-        const { name, role, company } = data;
+        const { name, role, company } = body;
 
         if (!anthropic) {
           // Return demo response if no API key

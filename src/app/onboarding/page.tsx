@@ -157,8 +157,13 @@ function OnboardingContent() {
         });
       }
 
-      // Redirect to dashboard
-      router.push("/dashboard");
+      // Clear the tour flag so tour shows on first visit
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("hasSeenDashboardTour");
+      }
+
+      // Redirect to dashboard with welcome flag to trigger tour
+      router.push("/dashboard?welcome=true");
     } catch (error) {
       console.error("Error completing onboarding:", error);
       setIsSaving(false);

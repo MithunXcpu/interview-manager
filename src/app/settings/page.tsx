@@ -2,8 +2,8 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { STAGE_DEFINITIONS } from "@/lib/stages";
+import Header from "@/components/Header";
 
 type TabKey = "availability" | "pipeline" | "integrations" | "templates" | "profile";
 type DayOfWeek = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
@@ -312,38 +312,17 @@ function SettingsContent() {
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
-      {/* Header */}
-      <header className="border-b border-[var(--border)] sticky top-0 bg-[var(--background)] z-40">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <Link href="/dashboard" className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                <span>📋</span>
-              </div>
-              <span className="font-bold hidden sm:block">Interview Manager</span>
-            </Link>
+      <Header />
 
-            <nav className="flex items-center gap-1">
-              <Link href="/dashboard" className="px-3 py-1.5 rounded-lg text-sm text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]">
-                Pipeline
-              </Link>
-              <Link href="/emails" className="px-3 py-1.5 rounded-lg text-sm text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]">
-                Emails
-              </Link>
-              <Link href="/calendar" className="px-3 py-1.5 rounded-lg text-sm text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]">
-                Calendar
-              </Link>
-              <Link href="/settings" className="px-3 py-1.5 rounded-lg text-sm bg-[var(--primary)]/20 text-[var(--primary)]">
-                Settings
-              </Link>
-            </nav>
-          </div>
-
+      {/* Sub-header with save button */}
+      <div className="border-b border-[var(--border)] bg-[var(--background)]">
+        <div className="max-w-6xl mx-auto px-4 py-2 flex items-center justify-between">
+          <h1 className="text-lg font-semibold">Settings</h1>
           <button onClick={handleSave} className="btn btn-primary text-sm">
             {saved ? "✓ Saved" : "Save Changes"}
           </button>
         </div>
-      </header>
+      </div>
 
       <main className="max-w-6xl mx-auto px-4 py-8">
         <div className="flex flex-col md:flex-row gap-8">
