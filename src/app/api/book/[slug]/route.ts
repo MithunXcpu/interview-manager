@@ -127,7 +127,7 @@ export async function GET(
       },
       host: {
         name: user.name || slug,
-        timezone: user.timezone,
+        timezone: user.availabilitySlots[0]?.timezone || "America/Los_Angeles",
       },
       slots,
     });
