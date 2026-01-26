@@ -135,9 +135,15 @@ function SettingsContent() {
           setGoogleConnected(data.user.googleConnected);
         }
 
-        if (stagesRes.ok) {
+        // Get stages from API (even if error, it returns stageLibrary)
+        try {
           const data = await stagesRes.json();
-          setUserStages(data.stages);
+          if (data.stages && data.stages.length > 0) {
+            setUserStages(data.stages);
+          }
+          // If no stages in database, we'll show the "Add Default Stages" prompt
+        } catch {
+          // JSON parse failed
         }
       } catch (error) {
         console.error("Error fetching data:", error);
