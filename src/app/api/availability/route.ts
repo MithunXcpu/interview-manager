@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
         dayOfWeek: slot.dayOfWeek,
         startTime: slot.startTime,
         endTime: slot.endTime,
-        timezone: slot.timezone || user.timezone,
+        timezone: slot.timezone || "America/Los_Angeles",
         isActive: true,
       })),
     });
