@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { isStageAdvancement, CELEBRATION_STAGES } from "@/lib/stages";
+import { isStageAdvancement, CELEBRATION_STAGES, STAGE_DEFINITIONS } from "@/lib/stages";
 import Tour from "@/components/Tour";
 import Header from "@/components/Header";
 
@@ -151,15 +151,49 @@ function DashboardContent() {
 
         if (stagesRes.ok) {
           const data = await stagesRes.json();
-          setStages(data.stages.filter((s: Stage) => s.isEnabled));
+          const enabledStages = (data.stages || []).filter((s: Stage) => s.isEnabled);
+          if (enabledStages.length > 0) {
+            setStages(enabledStages);
+            console.log("Loaded stages:", enabledStages.length);
+          } else {
+            // Use default stages as fallback
+            console.log("No stages found, using defaults");
+            const defaultStages = STAGE_DEFINITIONS
+              .filter(s => s.defaultEnabled)
+              .map((s, i) => ({
+                id: `default-${s.key}`,
+                stageKey: s.key,
+                name: s.name,
+                emoji: s.emoji,
+                color: s.color,
+                order: i,
+                isEnabled: true,
+              }));
+            setStages(defaultStages);
+          }
+        } else {
+          console.error("Failed to fetch stages:", stagesRes.status);
+          // Use default stages as fallback
+          const defaultStages = STAGE_DEFINITIONS
+            .filter(s => s.defaultEnabled)
+            .map((s, i) => ({
+              id: `default-${s.key}`,
+              stageKey: s.key,
+              name: s.name,
+              emoji: s.emoji,
+              color: s.color,
+              order: i,
+              isEnabled: true,
+            }));
+          setStages(defaultStages);
         }
 
         if (companiesRes.ok) {
           const data = await companiesRes.json();
-          setCompanies(data.companies);
+          setCompanies(data.companies || []);
           // Store initial stages for tracking advancement
           const stageMap: Record<string, string> = {};
-          data.companies.forEach((c: Company) => {
+          (data.companies || []).forEach((c: Company) => {
             stageMap[c.id] = c.stage?.stageKey || "";
           });
           previousStagesRef.current = stageMap;

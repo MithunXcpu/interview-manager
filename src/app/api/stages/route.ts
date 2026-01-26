@@ -8,15 +8,36 @@ export async function GET() {
     const { userId } = await auth();
 
     if (!userId) {
+      console.log("Stages API: No userId from auth");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const user = await db.user.findUnique({
+    let user = await db.user.findUnique({
       where: { clerkId: userId },
     });
 
+    // Create user if not found (backup for race conditions)
     if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      console.log("Stages API: User not found, creating...");
+      try {
+        user = await db.user.create({
+          data: {
+            clerkId: userId,
+            email: `${userId}@temp.local`,
+            onboardingCompleted: false,
+            onboardingStep: 0,
+          },
+        });
+      } catch (createError) {
+        // User might have been created by another request
+        user = await db.user.findUnique({
+          where: { clerkId: userId },
+        });
+        if (!user) {
+          console.error("Stages API: Failed to create or find user");
+          return NextResponse.json({ error: "User not found" }, { status: 404 });
+        }
+      }
     }
 
     // Fetch user's stages
@@ -25,8 +46,11 @@ export async function GET() {
       orderBy: { order: "asc" },
     });
 
+    console.log(`Stages API: Found ${stages.length} stages for user ${user.id}`);
+
     // Create default stages if none exist
     if (stages.length === 0) {
+      console.log("Stages API: Creating default stages...");
       const defaultStages = STAGE_DEFINITIONS
         .filter(s => s.defaultEnabled)
         .map((stage, index) => ({
@@ -39,14 +63,22 @@ export async function GET() {
           isEnabled: true,
         }));
 
-      await db.userStage.createMany({
-        data: defaultStages,
-      });
+      try {
+        await db.userStage.createMany({
+          data: defaultStages,
+          skipDuplicates: true,
+        });
 
-      stages = await db.userStage.findMany({
-        where: { userId: user.id },
-        orderBy: { order: "asc" },
-      });
+        stages = await db.userStage.findMany({
+          where: { userId: user.id },
+          orderBy: { order: "asc" },
+        });
+        console.log(`Stages API: Created ${stages.length} default stages`);
+      } catch (stageError) {
+        console.error("Stages API: Error creating stages:", stageError);
+        // Return empty stages rather than error
+        stages = [];
+      }
     }
 
     // Also return the stage library for settings
@@ -55,9 +87,9 @@ export async function GET() {
       stageLibrary: STAGE_DEFINITIONS,
     });
   } catch (error) {
-    console.error("Error fetching stages:", error);
+    console.error("Stages API error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch stages" },
+      { error: "Failed to fetch stages", stages: [], stageLibrary: STAGE_DEFINITIONS },
       { status: 500 }
     );
   }
