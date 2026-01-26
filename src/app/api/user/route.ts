@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
+import { STAGE_DEFINITIONS } from "@/lib/stages";
 
 export async function GET() {
   try {
@@ -43,6 +44,18 @@ export async function GET() {
       const name = `${clerkUser?.first_name || ""} ${clerkUser?.last_name || ""}`.trim() || null;
       const slug = email.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "-");
 
+      // Create default stages data
+      const defaultStages = STAGE_DEFINITIONS
+        .filter(s => s.defaultEnabled)
+        .map((stage, index) => ({
+          stageKey: stage.key,
+          name: stage.name,
+          emoji: stage.emoji,
+          color: stage.color,
+          order: index,
+          isEnabled: true,
+        }));
+
       user = await db.user.create({
         data: {
           clerkId: userId,
@@ -56,6 +69,9 @@ export async function GET() {
               title: "Schedule a meeting",
               duration: 30,
             },
+          },
+          userStages: {
+            create: defaultStages,
           },
         },
         include: {

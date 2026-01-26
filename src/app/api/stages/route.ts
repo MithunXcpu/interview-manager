@@ -20,10 +20,34 @@ export async function GET() {
     }
 
     // Fetch user's stages
-    const stages = await db.userStage.findMany({
+    let stages = await db.userStage.findMany({
       where: { userId: user.id },
       orderBy: { order: "asc" },
     });
+
+    // Create default stages if none exist
+    if (stages.length === 0) {
+      const defaultStages = STAGE_DEFINITIONS
+        .filter(s => s.defaultEnabled)
+        .map((stage, index) => ({
+          userId: user.id,
+          stageKey: stage.key,
+          name: stage.name,
+          emoji: stage.emoji,
+          color: stage.color,
+          order: index,
+          isEnabled: true,
+        }));
+
+      await db.userStage.createMany({
+        data: defaultStages,
+      });
+
+      stages = await db.userStage.findMany({
+        where: { userId: user.id },
+        orderBy: { order: "asc" },
+      });
+    }
 
     // Also return the stage library for settings
     return NextResponse.json({
