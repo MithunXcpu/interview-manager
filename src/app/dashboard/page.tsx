@@ -104,7 +104,20 @@ const fireConfetti = async (isBigCelebration: boolean = false) => {
 function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [stages, setStages] = useState<Stage[]>([]);
+  // Default stages that always show
+  const DEFAULT_STAGES: Stage[] = STAGE_DEFINITIONS
+    .filter(s => s.defaultEnabled)
+    .map((s, i) => ({
+      id: `stage-${s.key}`,
+      stageKey: s.key,
+      name: s.name,
+      emoji: s.emoji,
+      color: s.color,
+      order: i,
+      isEnabled: true,
+    }));
+
+  const [stages, setStages] = useState<Stage[]>(DEFAULT_STAGES);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [showCompanyModal, setShowCompanyModal] = useState(false);
@@ -154,63 +167,10 @@ function DashboardContent() {
           const enabledStages = (data.stages || []).filter((s: Stage) => s.isEnabled);
           if (enabledStages.length > 0) {
             setStages(enabledStages);
-            console.log("Loaded stages:", enabledStages.length);
-          } else {
-            // No stages found - create default stages
-            console.log("No stages found, creating defaults...");
-            const defaultStageKeys = STAGE_DEFINITIONS.filter(s => s.defaultEnabled);
-            const createdStages: Stage[] = [];
-
-            for (const stageDef of defaultStageKeys) {
-              try {
-                const createRes = await fetch("/api/stages", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ stageKey: stageDef.key }),
-                });
-                if (createRes.ok) {
-                  const createData = await createRes.json();
-                  createdStages.push(createData.stage);
-                }
-              } catch (e) {
-                console.error("Error creating stage:", stageDef.key, e);
-              }
-            }
-
-            if (createdStages.length > 0) {
-              setStages(createdStages.sort((a, b) => a.order - b.order));
-            } else {
-              // Fallback to client-side defaults
-              const defaultStages = STAGE_DEFINITIONS
-                .filter(s => s.defaultEnabled)
-                .map((s, i) => ({
-                  id: `default-${s.key}`,
-                  stageKey: s.key,
-                  name: s.name,
-                  emoji: s.emoji,
-                  color: s.color,
-                  order: i,
-                  isEnabled: true,
-                }));
-              setStages(defaultStages);
-            }
           }
-        } else {
-          console.error("Failed to fetch stages:", stagesRes.status);
-          // Use default stages as fallback
-          const defaultStages = STAGE_DEFINITIONS
-            .filter(s => s.defaultEnabled)
-            .map((s, i) => ({
-              id: `default-${s.key}`,
-              stageKey: s.key,
-              name: s.name,
-              emoji: s.emoji,
-              color: s.color,
-              order: i,
-              isEnabled: true,
-            }));
-          setStages(defaultStages);
+          // If no stages from API, keep the default stages that were set initially
         }
+        // If API fails, keep the default stages that were set initially
 
         if (companiesRes.ok) {
           const data = await companiesRes.json();
