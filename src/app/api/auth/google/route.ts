@@ -24,17 +24,24 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Get redirect URL from query params (default to /settings)
+    const { searchParams } = new URL(request.url);
+    const redirectTo = searchParams.get("redirect") || "/settings";
+
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
       `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/google/callback`
     );
 
+    // Encode state as JSON with userId and redirect URL
+    const state = Buffer.from(JSON.stringify({ userId, redirectTo })).toString("base64");
+
     const authUrl = oauth2Client.generateAuthUrl({
       access_type: "offline",
       scope: SCOPES,
       prompt: "consent",
-      state: userId, // Pass user ID for verification
+      state,
     });
 
     return NextResponse.redirect(authUrl);

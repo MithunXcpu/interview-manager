@@ -294,16 +294,9 @@ function SettingsContent() {
     setDraggedStage(null);
   };
 
-  const connectGoogle = async () => {
-    try {
-      const response = await fetch("/api/auth/google");
-      const data = await response.json();
-      if (data.authUrl) {
-        window.location.href = data.authUrl;
-      }
-    } catch (error) {
-      console.error("Error connecting Google:", error);
-    }
+  const connectGoogle = () => {
+    // Redirect to Google OAuth with settings as return URL
+    window.location.href = "/api/auth/google?redirect=/settings";
   };
 
   if (isLoading) {
@@ -336,6 +329,9 @@ function SettingsContent() {
               </Link>
               <Link href="/emails" className="px-3 py-1.5 rounded-lg text-sm text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]">
                 Emails
+              </Link>
+              <Link href="/calendar" className="px-3 py-1.5 rounded-lg text-sm text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]">
+                Calendar
               </Link>
               <Link href="/settings" className="px-3 py-1.5 rounded-lg text-sm bg-[var(--primary)]/20 text-[var(--primary)]">
                 Settings

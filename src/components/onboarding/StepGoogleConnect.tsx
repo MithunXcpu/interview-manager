@@ -17,21 +17,10 @@ export default function StepGoogleConnect({
 }: StepGoogleConnectProps) {
   const [isConnecting, setIsConnecting] = useState(false);
 
-  const handleConnect = async () => {
+  const handleConnect = () => {
     setIsConnecting(true);
-    try {
-      // Fetch the Google auth URL from our API
-      const response = await fetch("/api/auth/google");
-      const data = await response.json();
-
-      if (data.authUrl) {
-        // Redirect to Google OAuth
-        window.location.href = data.authUrl;
-      }
-    } catch (error) {
-      console.error("Error connecting to Google:", error);
-      setIsConnecting(false);
-    }
+    // Redirect to Google OAuth with onboarding as return URL
+    window.location.href = "/api/auth/google?redirect=/onboarding";
   };
 
   return (

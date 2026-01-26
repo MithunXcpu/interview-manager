@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { isStageAdvancement, CELEBRATION_STAGES } from "@/lib/stages";
+import Tour from "@/components/Tour";
 
 const ClerkUserButton = dynamic(
   () => import("@clerk/nextjs").then(mod => mod.UserButton),
@@ -116,6 +117,7 @@ export default function Dashboard() {
   const [searchingAI, setSearchingAI] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [bookingSlug, setBookingSlug] = useState<string>("");
+  const [showTour, setShowTour] = useState(false);
   const previousStagesRef = useRef<Record<string, string>>({});
 
   const bookingLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/book/${bookingSlug}`;
@@ -154,6 +156,13 @@ export default function Dashboard() {
             return;
           }
           setBookingSlug(data.user.bookingLink?.slug || "me");
+
+          // Show tour for first-time users (check localStorage)
+          const hasSeenTour = localStorage.getItem("hasSeenDashboardTour");
+          if (!hasSeenTour) {
+            // Small delay to let the UI render first
+            setTimeout(() => setShowTour(true), 500);
+          }
         }
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -364,10 +373,13 @@ export default function Dashboard() {
               <Link href="/dashboard" className="px-3 py-1.5 rounded-lg text-sm bg-[var(--primary)]/20 text-[var(--primary)]">
                 Pipeline
               </Link>
-              <Link href="/emails" className="px-3 py-1.5 rounded-lg text-sm text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]">
+              <Link href="/emails" data-tour="nav-emails" className="px-3 py-1.5 rounded-lg text-sm text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]">
                 Emails
               </Link>
-              <Link href="/settings" className="px-3 py-1.5 rounded-lg text-sm text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]">
+              <Link href="/calendar" className="px-3 py-1.5 rounded-lg text-sm text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]">
+                Calendar
+              </Link>
+              <Link href="/settings" data-tour="nav-settings" className="px-3 py-1.5 rounded-lg text-sm text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]">
                 Settings
               </Link>
             </nav>
@@ -390,6 +402,7 @@ export default function Dashboard() {
               ⚙️ Customize Stages
             </Link>
             <button
+              data-tour="add-company"
               onClick={() => {
                 const defaultStage = stages[0];
                 setSelectedCompany({
@@ -417,7 +430,7 @@ export default function Dashboard() {
       </header>
 
       {/* Kanban Board */}
-      <main className="max-w-[1800px] mx-auto p-4">
+      <main className="max-w-[1800px] mx-auto p-4" data-tour="pipeline">
         {stages.length === 0 ? (
           <div className="text-center py-20">
             <p className="text-[var(--muted)] mb-4">No pipeline stages configured.</p>
@@ -835,6 +848,15 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* First-time user tour */}
+      <Tour
+        isActive={showTour}
+        onComplete={() => {
+          setShowTour(false);
+          localStorage.setItem("hasSeenDashboardTour", "true");
+        }}
+      />
     </div>
   );
 }

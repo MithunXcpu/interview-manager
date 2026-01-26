@@ -101,6 +101,7 @@ export default function EmailsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [bookingSlug, setBookingSlug] = useState("me");
+  const [userName, setUserName] = useState("Candidate");
   const [availabilitySlots, setAvailabilitySlots] = useState<AvailabilitySlot[]>([]);
   const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
   const [isSendingReply, setIsSendingReply] = useState(false);
@@ -125,6 +126,8 @@ export default function EmailsPage() {
         if (userRes.ok) {
           const data = await userRes.json();
           setBookingSlug(data.user.bookingLink?.slug || "me");
+          setUserName(data.user.name || "Candidate");
+          setUserPhone(data.user.phone || "");
         }
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -242,12 +245,14 @@ export default function EmailsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "generate_reply",
-          emailBody: selectedEmail.body,
-          subject: selectedEmail.subject,
-          context: {
-            recruiterName: selectedEmail.from.split(" ")[0],
-            companyName: selectedEmail.detectedCompany,
+          data: {
+            email: {
+              from: selectedEmail.from,
+              body: selectedEmail.body,
+              subject: selectedEmail.subject,
+            },
             bookingLink,
+            userName,
           },
         }),
       });
@@ -334,14 +339,47 @@ export default function EmailsPage() {
     }
   };
 
-  const insertMeetingLink = (type: "google_meet" | "zoom" | "phone" | "booking") => {
-    const links: Record<string, string> = {
-      google_meet: "\n\nGoogle Meet link: https://meet.google.com/xxx-xxxx-xxx",
-      zoom: "\n\nZoom link: https://zoom.us/j/xxxxxxxxx",
-      phone: "\n\nFeel free to call me at: (555) 123-4567",
-      booking: `\n\nBook time with me: ${bookingLink}`,
-    };
-    setReplyText((prev) => prev + links[type]);
+  const [isCreatingMeet, setIsCreatingMeet] = useState(false);
+  const [userPhone, setUserPhone] = useState("");
+
+  const insertMeetingLink = async (type: "google_meet" | "zoom" | "phone" | "booking") => {
+    if (type === "google_meet") {
+      // Create a real Google Meet link via calendar API
+      setIsCreatingMeet(true);
+      try {
+        const response = await fetch("/api/calendar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "create_meet_link",
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.meetLink) {
+            setReplyText((prev) => prev + `\n\nJoin Google Meet: ${data.meetLink}`);
+          } else {
+            setReplyText((prev) => prev + `\n\nBook time with me: ${bookingLink}`);
+          }
+        } else {
+          // Fallback to booking link if Meet creation fails
+          setReplyText((prev) => prev + `\n\nBook time with me: ${bookingLink}`);
+        }
+      } catch (error) {
+        console.error("Error creating Meet link:", error);
+        setReplyText((prev) => prev + `\n\nBook time with me: ${bookingLink}`);
+      } finally {
+        setIsCreatingMeet(false);
+      }
+    } else {
+      const links: Record<string, string> = {
+        zoom: "\n\nZoom link: https://zoom.us/j/xxxxxxxxx (Please add your personal Zoom link in settings)",
+        phone: userPhone ? `\n\nFeel free to call me at: ${userPhone}` : "\n\nFeel free to call me at: (Add your phone in settings)",
+        booking: `\n\nBook time with me: ${bookingLink}`,
+      };
+      setReplyText((prev) => prev + links[type]);
+    }
   };
 
   const formatDate = (dateStr: string) => {
@@ -394,6 +432,12 @@ export default function EmailsPage() {
                 className="px-3 py-1.5 rounded-lg text-sm bg-[var(--primary)]/20 text-[var(--primary)]"
               >
                 Emails
+              </Link>
+              <Link
+                href="/calendar"
+                className="px-3 py-1.5 rounded-lg text-sm text-[var(--muted)] hover:text-white hover:bg-[var(--secondary)]"
+              >
+                Calendar
               </Link>
               <Link
                 href="/settings"
@@ -604,9 +648,10 @@ export default function EmailsPage() {
                   </button>
                   <button
                     onClick={() => insertMeetingLink("google_meet")}
-                    className="px-2 py-1 bg-[var(--secondary)] rounded text-xs hover:bg-[var(--primary)]/20"
+                    disabled={isCreatingMeet}
+                    className="px-2 py-1 bg-[var(--secondary)] rounded text-xs hover:bg-[var(--primary)]/20 disabled:opacity-50"
                   >
-                    📹 Google Meet
+                    {isCreatingMeet ? "Creating..." : "📹 Google Meet"}
                   </button>
                   <button
                     onClick={() => insertMeetingLink("phone")}

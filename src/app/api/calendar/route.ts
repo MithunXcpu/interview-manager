@@ -172,6 +172,49 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    const { action } = body;
+
+    // Handle create_meet_link action - creates a quick Meet link
+    if (action === "create_meet_link") {
+      if (!user.googleAccessToken || !user.googleRefreshToken) {
+        return NextResponse.json({
+          meetLink: null,
+          message: "Connect Google to create Meet links",
+        });
+      }
+
+      try {
+        // Create a placeholder event just to get a Meet link
+        const now = new Date();
+        const startTime = addDays(now, 7); // 7 days from now
+        const endTime = addMinutes(startTime, 30);
+
+        const event = await createCalendarEvent(
+          user.googleAccessToken,
+          {
+            summary: "Quick Meeting",
+            description: "Meeting link created from Interview Manager",
+            start: startTime,
+            end: endTime,
+            attendees: [],
+            conferenceData: true,
+          },
+          user.googleRefreshToken
+        );
+
+        return NextResponse.json({
+          meetLink: event.hangoutLink || null,
+          eventId: event.id,
+        });
+      } catch (error) {
+        console.error("Error creating Meet link:", error);
+        return NextResponse.json({
+          meetLink: null,
+          error: "Failed to create Meet link",
+        });
+      }
+    }
+
     const {
       title,
       description,
