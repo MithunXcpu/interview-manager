@@ -1,67 +1,49 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 
-type TimeSlot = {
-  time: string;
-  available: boolean;
+type MeetingType = "GOOGLE_MEET" | "ZOOM" | "PHONE";
+
+type BookingInfo = {
+  slug: string;
+  title: string;
+  description: string | null;
+  duration: number;
+  meetingType: MeetingType;
 };
 
-type MeetingType = "google_meet" | "zoom" | "phone";
+type HostInfo = {
+  name: string;
+  timezone: string;
+};
 
-const DEMO_AVAILABILITY: Record<string, TimeSlot[]> = {
-  "2025-01-27": [
-    { time: "09:00", available: true },
-    { time: "10:00", available: true },
-    { time: "11:00", available: false },
-    { time: "14:00", available: true },
-    { time: "15:00", available: true },
-    { time: "16:00", available: true },
-  ],
-  "2025-01-28": [
-    { time: "09:00", available: true },
-    { time: "10:00", available: false },
-    { time: "11:00", available: true },
-    { time: "14:00", available: true },
-    { time: "15:00", available: false },
-  ],
-  "2025-01-29": [
-    { time: "10:00", available: true },
-    { time: "11:00", available: true },
-    { time: "14:00", available: true },
-    { time: "15:00", available: true },
-    { time: "16:00", available: true },
-  ],
-  "2025-01-30": [
-    { time: "09:00", available: true },
-    { time: "10:00", available: true },
-    { time: "14:00", available: true },
-  ],
-  "2025-01-31": [
-    { time: "09:00", available: true },
-    { time: "10:00", available: true },
-    { time: "11:00", available: true },
-    { time: "14:00", available: true },
-    { time: "15:00", available: true },
-  ],
+type AvailableSlot = {
+  date: string;
+  times: string[];
 };
 
 const MEETING_TYPES: { key: MeetingType; label: string; icon: string; description: string }[] = [
-  { key: "google_meet", label: "Google Meet", icon: "📹", description: "Video call via Google Meet" },
-  { key: "zoom", label: "Zoom", icon: "💻", description: "Video call via Zoom" },
-  { key: "phone", label: "Phone Call", icon: "📞", description: "I'll call you" },
+  { key: "GOOGLE_MEET", label: "Google Meet", icon: "📹", description: "Video call via Google Meet" },
+  { key: "ZOOM", label: "Zoom", icon: "💻", description: "Video call via Zoom" },
+  { key: "PHONE", label: "Phone Call", icon: "📞", description: "I'll call you" },
 ];
 
 export default function BookingPage() {
   const params = useParams();
   const slug = params.slug as string;
 
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [bookingInfo, setBookingInfo] = useState<BookingInfo | null>(null);
+  const [hostInfo, setHostInfo] = useState<HostInfo | null>(null);
+  const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
+
   const [step, setStep] = useState<"date" | "time" | "details" | "confirmed">("date");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
-  const [meetingType, setMeetingType] = useState<MeetingType>("google_meet");
+  const [meetingType, setMeetingType] = useState<MeetingType>("GOOGLE_MEET");
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -71,20 +53,52 @@ export default function BookingPage() {
     phone: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [bookingResult, setBookingResult] = useState<{
+    meetLink?: string;
+    hostName?: string;
+    duration?: number;
+    title?: string;
+  } | null>(null);
 
-  // Generate next 14 days
+  // Fetch booking info and availability
+  useEffect(() => {
+    async function fetchAvailability() {
+      try {
+        setLoading(true);
+        const response = await fetch(`/api/book/${slug}?days=14`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          setError(data.error || "Failed to load booking page");
+          return;
+        }
+
+        setBookingInfo(data.bookingLink);
+        setHostInfo(data.host);
+        setAvailableSlots(data.slots);
+        setMeetingType(data.bookingLink.meetingType);
+      } catch {
+        setError("Failed to load booking page");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchAvailability();
+  }, [slug]);
+
+  // Generate next 14 days for display
   const dates = Array.from({ length: 14 }, (_, i) => {
     const date = new Date();
     date.setDate(date.getDate() + i + 1);
     return date.toISOString().split("T")[0];
   });
 
-  const availableDates = dates.filter(date => {
-    const slots = DEMO_AVAILABILITY[date];
-    return slots && slots.some(s => s.available);
-  });
+  const availableDates = availableSlots.map((s) => s.date);
 
-  const timeSlots = selectedDate ? DEMO_AVAILABILITY[selectedDate] || [] : [];
+  const timeSlots = selectedDate
+    ? availableSlots.find((s) => s.date === selectedDate)?.times || []
+    : [];
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr + "T12:00:00");
@@ -96,12 +110,70 @@ export default function BookingPage() {
   };
 
   const handleSubmit = async () => {
+    if (!selectedDate || !selectedTime) return;
+
     setIsSubmitting(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setStep("confirmed");
-    setIsSubmitting(false);
+    try {
+      const response = await fetch(`/api/book/${slug}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: selectedDate,
+          time: selectedTime,
+          name: formData.name,
+          email: formData.email,
+          company: formData.company,
+          role: formData.role,
+          notes: formData.notes,
+          phone: formData.phone,
+          meetingType,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to create booking");
+      }
+
+      setBookingResult(data.booking);
+      setStep("confirmed");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to create booking");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[var(--background)] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-[var(--primary)] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-[var(--muted)]">Loading availability...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !bookingInfo) {
+    return (
+      <div className="min-h-screen bg-[var(--background)] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-20 h-20 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-6">
+            <span className="text-4xl">❌</span>
+          </div>
+          <h1 className="text-2xl font-bold mb-2">Booking Not Found</h1>
+          <p className="text-[var(--muted)] mb-6">
+            {error || "This booking link is no longer available."}
+          </p>
+          <Link href="/" className="btn btn-primary">
+            Go Home
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
@@ -132,27 +204,51 @@ export default function BookingPage() {
             <div className="card max-w-md mx-auto text-left">
               <div className="flex items-center gap-4 mb-4">
                 <div className="w-12 h-12 rounded-full bg-[var(--primary)]/20 flex items-center justify-center text-xl">
-                  {slug.charAt(0).toUpperCase()}
+                  {(hostInfo?.name || slug).charAt(0).toUpperCase()}
                 </div>
                 <div>
-                  <p className="font-semibold">Meeting with {slug}</p>
-                  <p className="text-sm text-[var(--muted)]">30 min interview</p>
+                  <p className="font-semibold">
+                    Meeting with {bookingResult?.hostName || hostInfo?.name || slug}
+                  </p>
+                  <p className="text-sm text-[var(--muted)]">
+                    {bookingResult?.duration || bookingInfo.duration} min {bookingResult?.title || bookingInfo.title}
+                  </p>
                 </div>
               </div>
 
               <div className="space-y-2 text-sm">
                 <div className="flex items-center gap-2">
                   <span>📅</span>
-                  <span>{selectedDate && new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</span>
+                  <span>
+                    {selectedDate &&
+                      new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", {
+                        weekday: "long",
+                        month: "long",
+                        day: "numeric",
+                      })}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span>🕐</span>
                   <span>{selectedTime}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span>{MEETING_TYPES.find(m => m.key === meetingType)?.icon}</span>
-                  <span>{MEETING_TYPES.find(m => m.key === meetingType)?.label}</span>
+                  <span>{MEETING_TYPES.find((m) => m.key === meetingType)?.icon}</span>
+                  <span>{MEETING_TYPES.find((m) => m.key === meetingType)?.label}</span>
                 </div>
+                {bookingResult?.meetLink && (
+                  <div className="flex items-center gap-2 pt-2 border-t border-[var(--border)]">
+                    <span>🔗</span>
+                    <a
+                      href={bookingResult.meetLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[var(--primary)] hover:underline"
+                    >
+                      Join Google Meet
+                    </a>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -162,6 +258,7 @@ export default function BookingPage() {
                 setSelectedDate(null);
                 setSelectedTime(null);
                 setFormData({ name: "", email: "", company: "", role: "", notes: "", phone: "" });
+                setBookingResult(null);
               }}
               className="btn btn-secondary mt-8"
             >
@@ -174,24 +271,33 @@ export default function BookingPage() {
             <div>
               <div className="card sticky top-8">
                 <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl mb-4">
-                  {slug.charAt(0).toUpperCase()}
+                  {(hostInfo?.name || slug).charAt(0).toUpperCase()}
                 </div>
-                <h2 className="text-xl font-bold mb-1">{slug}</h2>
-                <p className="text-[var(--muted)] text-sm mb-4">30 Minute Meeting</p>
+                <h2 className="text-xl font-bold mb-1">{hostInfo?.name || slug}</h2>
+                <p className="text-[var(--muted)] text-sm mb-2">{bookingInfo.title}</p>
+                {bookingInfo.description && (
+                  <p className="text-[var(--muted)] text-xs mb-4">{bookingInfo.description}</p>
+                )}
 
                 <div className="border-t border-[var(--border)] pt-4 space-y-3 text-sm">
                   <div className="flex items-center gap-2 text-[var(--muted)]">
                     <span>🕐</span>
-                    <span>30 min</span>
+                    <span>{bookingInfo.duration} min</span>
                   </div>
                   <div className="flex items-center gap-2 text-[var(--muted)]">
                     <span>🌐</span>
-                    <span>Pacific Time (PT)</span>
+                    <span>{hostInfo?.timezone || "Pacific Time"}</span>
                   </div>
                   {selectedDate && (
                     <div className="flex items-center gap-2 text-[var(--primary)]">
                       <span>📅</span>
-                      <span>{new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</span>
+                      <span>
+                        {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </span>
                     </div>
                   )}
                   {selectedTime && (
@@ -210,11 +316,15 @@ export default function BookingPage() {
               <div className="flex items-center gap-2 mb-8">
                 {["date", "time", "details"].map((s, i) => (
                   <div key={s} className="flex items-center">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                      step === s ? "bg-[var(--primary)] text-white" :
-                      ["date", "time", "details"].indexOf(step) > i ? "bg-green-500 text-white" :
-                      "bg-[var(--secondary)] text-[var(--muted)]"
-                    }`}>
+                    <div
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                        step === s
+                          ? "bg-[var(--primary)] text-white"
+                          : ["date", "time", "details"].indexOf(step) > i
+                          ? "bg-green-500 text-white"
+                          : "bg-[var(--secondary)] text-[var(--muted)]"
+                      }`}
+                    >
                       {["date", "time", "details"].indexOf(step) > i ? "✓" : i + 1}
                     </div>
                     {i < 2 && <div className="w-12 h-0.5 bg-[var(--border)]" />}
@@ -225,71 +335,82 @@ export default function BookingPage() {
               {step === "date" && (
                 <div>
                   <h1 className="text-2xl font-bold mb-6">Select a Date</h1>
-                  <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 gap-2">
-                    {dates.map(date => {
-                      const { day, date: d, month } = formatDate(date);
-                      const hasSlots = availableDates.includes(date);
-                      return (
-                        <button
-                          key={date}
-                          onClick={() => hasSlots && setSelectedDate(date)}
-                          disabled={!hasSlots}
-                          className={`p-3 rounded-xl text-center transition-all ${
-                            selectedDate === date
-                              ? "bg-[var(--primary)] text-white"
-                              : hasSlots
-                              ? "bg-[var(--secondary)] hover:bg-[var(--primary)]/20 hover:border-[var(--primary)] border border-[var(--border)]"
-                              : "bg-[var(--secondary)]/50 text-[var(--muted)] cursor-not-allowed opacity-50"
-                          }`}
-                        >
-                          <div className="text-xs opacity-70">{day}</div>
-                          <div className="text-lg font-bold">{d}</div>
-                          <div className="text-xs opacity-70">{month}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {availableSlots.length === 0 ? (
+                    <div className="text-center py-12">
+                      <div className="w-16 h-16 rounded-full bg-[var(--secondary)] flex items-center justify-center mx-auto mb-4">
+                        <span className="text-2xl">📅</span>
+                      </div>
+                      <p className="text-[var(--muted)]">No available time slots</p>
+                      <p className="text-sm text-[var(--muted)] mt-2">
+                        Please check back later or contact the host directly.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 gap-2">
+                        {dates.map((date) => {
+                          const { day, date: d, month } = formatDate(date);
+                          const hasSlots = availableDates.includes(date);
+                          return (
+                            <button
+                              key={date}
+                              onClick={() => hasSlots && setSelectedDate(date)}
+                              disabled={!hasSlots}
+                              className={`p-3 rounded-xl text-center transition-all ${
+                                selectedDate === date
+                                  ? "bg-[var(--primary)] text-white"
+                                  : hasSlots
+                                  ? "bg-[var(--secondary)] hover:bg-[var(--primary)]/20 hover:border-[var(--primary)] border border-[var(--border)]"
+                                  : "bg-[var(--secondary)]/50 text-[var(--muted)] cursor-not-allowed opacity-50"
+                              }`}
+                            >
+                              <div className="text-xs opacity-70">{day}</div>
+                              <div className="text-lg font-bold">{d}</div>
+                              <div className="text-xs opacity-70">{month}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
 
-                  {selectedDate && (
-                    <button
-                      onClick={() => setStep("time")}
-                      className="btn btn-primary mt-8"
-                    >
-                      Continue
-                    </button>
+                      {selectedDate && (
+                        <button onClick={() => setStep("time")} className="btn btn-primary mt-8">
+                          Continue
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               )}
 
               {step === "time" && (
                 <div>
-                  <button onClick={() => setStep("date")} className="text-[var(--muted)] hover:text-white mb-4 flex items-center gap-1">
+                  <button
+                    onClick={() => setStep("date")}
+                    className="text-[var(--muted)] hover:text-white mb-4 flex items-center gap-1"
+                  >
                     ← Back
                   </button>
                   <h1 className="text-2xl font-bold mb-6">Select a Time</h1>
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-8">
-                    {timeSlots.map(slot => (
+                    {timeSlots.map((time) => (
                       <button
-                        key={slot.time}
-                        onClick={() => slot.available && setSelectedTime(slot.time)}
-                        disabled={!slot.available}
+                        key={time}
+                        onClick={() => setSelectedTime(time)}
                         className={`p-4 rounded-xl text-center transition-all ${
-                          selectedTime === slot.time
+                          selectedTime === time
                             ? "bg-[var(--primary)] text-white"
-                            : slot.available
-                            ? "bg-[var(--secondary)] hover:bg-[var(--primary)]/20 border border-[var(--border)] hover:border-[var(--primary)]"
-                            : "bg-[var(--secondary)]/50 text-[var(--muted)] cursor-not-allowed line-through opacity-50"
+                            : "bg-[var(--secondary)] hover:bg-[var(--primary)]/20 border border-[var(--border)] hover:border-[var(--primary)]"
                         }`}
                       >
-                        {slot.time}
+                        {time}
                       </button>
                     ))}
                   </div>
 
                   <h2 className="text-lg font-semibold mb-4">Meeting Type</h2>
                   <div className="space-y-3 mb-8">
-                    {MEETING_TYPES.map(type => (
+                    {MEETING_TYPES.map((type) => (
                       <button
                         key={type.key}
                         onClick={() => setMeetingType(type.key)}
@@ -312,10 +433,7 @@ export default function BookingPage() {
                   </div>
 
                   {selectedTime && (
-                    <button
-                      onClick={() => setStep("details")}
-                      className="btn btn-primary"
-                    >
+                    <button onClick={() => setStep("details")} className="btn btn-primary">
                       Continue
                     </button>
                   )}
@@ -324,7 +442,10 @@ export default function BookingPage() {
 
               {step === "details" && (
                 <div>
-                  <button onClick={() => setStep("time")} className="text-[var(--muted)] hover:text-white mb-4 flex items-center gap-1">
+                  <button
+                    onClick={() => setStep("time")}
+                    className="text-[var(--muted)] hover:text-white mb-4 flex items-center gap-1"
+                  >
                     ← Back
                   </button>
                   <h1 className="text-2xl font-bold mb-6">Enter Your Details</h1>
@@ -378,9 +499,11 @@ export default function BookingPage() {
                       </div>
                     </div>
 
-                    {meetingType === "phone" && (
+                    {meetingType === "PHONE" && (
                       <div>
-                        <label className="block text-sm text-[var(--muted)] mb-1">Phone Number *</label>
+                        <label className="block text-sm text-[var(--muted)] mb-1">
+                          Phone Number *
+                        </label>
                         <input
                           type="tel"
                           value={formData.phone}
@@ -393,7 +516,9 @@ export default function BookingPage() {
                     )}
 
                     <div>
-                      <label className="block text-sm text-[var(--muted)] mb-1">Additional Notes</label>
+                      <label className="block text-sm text-[var(--muted)] mb-1">
+                        Additional Notes
+                      </label>
                       <textarea
                         value={formData.notes}
                         onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
@@ -404,7 +529,12 @@ export default function BookingPage() {
 
                     <button
                       onClick={handleSubmit}
-                      disabled={!formData.name || !formData.email || (meetingType === "phone" && !formData.phone) || isSubmitting}
+                      disabled={
+                        !formData.name ||
+                        !formData.email ||
+                        (meetingType === "PHONE" && !formData.phone) ||
+                        isSubmitting
+                      }
                       className="btn btn-primary w-full disabled:opacity-50"
                     >
                       {isSubmitting ? "Scheduling..." : "Schedule Meeting"}

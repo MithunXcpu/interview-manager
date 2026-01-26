@@ -1,49 +1,69 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-
-// In production, this would use Prisma
-// For now, we return demo data
-
-const DEMO_COMPANIES = [
-  {
-    id: "1",
-    name: "Google",
-    industry: "Tech",
-    size: "10,000+",
-    jobTitle: "Senior Software Engineer",
-    stage: "INTERVIEW",
-    priority: "HIGH",
-    salary: { min: 180000, max: 250000, currency: "USD" },
-    totalRounds: 5,
-    completedRounds: 2,
-    interviewers: [
-      { name: "Sarah Chen", role: "Technical Recruiter" },
-      { name: "Mike Ross", role: "Engineering Manager" },
-    ],
-    appliedDate: "2025-01-15",
-  },
-  {
-    id: "2",
-    name: "Stripe",
-    industry: "Fintech",
-    size: "5,000+",
-    jobTitle: "Full Stack Engineer",
-    stage: "SCREENING",
-    priority: "HIGH",
-    salary: { min: 160000, max: 220000, currency: "USD" },
-    totalRounds: 4,
-    completedRounds: 1,
-    interviewers: [{ name: "David Kim", role: "Recruiter" }],
-    appliedDate: "2025-01-18",
-  },
-];
+import { db } from "@/lib/db";
 
 export async function GET() {
   try {
     const { userId } = await auth();
 
-    // Return demo data for now
-    return NextResponse.json({ companies: DEMO_COMPANIES });
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const user = await db.user.findUnique({
+      where: { clerkId: userId },
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const companies = await db.company.findMany({
+      where: { userId: user.id },
+      include: {
+        userStage: true,
+        interviews: {
+          orderBy: { scheduledAt: "asc" },
+        },
+        _count: {
+          select: { emails: true },
+        },
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+
+    // Transform to match frontend expectations
+    const transformedCompanies = companies.map((company) => ({
+      id: company.id,
+      name: company.name,
+      website: company.website,
+      jobTitle: company.jobTitle,
+      jobUrl: company.jobUrl,
+      salary: company.salary,
+      location: company.location,
+      remote: company.remote,
+      priority: company.priority,
+      recruiterName: company.recruiterName,
+      recruiterEmail: company.recruiterEmail,
+      recruiterPhone: company.recruiterPhone,
+      notes: company.notes,
+      stageId: company.stageId,
+      stage: company.userStage || {
+        stageKey: company.stage || "APPLIED",
+        name: company.stage || "Applied",
+        emoji: "📝",
+        color: "#8b5cf6",
+      },
+      interviews: company.interviews,
+      totalRounds: company.interviews.length || 4,
+      completedRounds: company.interviews.filter((i) => i.status === "COMPLETED").length,
+      nextInterview: company.interviews.find((i) => i.status === "SCHEDULED" && new Date(i.scheduledAt) > new Date()),
+      emailCount: company._count.emails,
+      createdAt: company.createdAt,
+      updatedAt: company.updatedAt,
+    }));
+
+    return NextResponse.json({ companies: transformedCompanies });
   } catch (error) {
     console.error("Error fetching companies:", error);
     return NextResponse.json(
@@ -61,29 +81,65 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const user = await db.user.findUnique({
+      where: { clerkId: userId },
+      include: {
+        userStages: {
+          where: { isEnabled: true },
+          orderBy: { order: "asc" },
+        },
+      },
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
     const body = await request.json();
 
     // Validate required fields
-    if (!body.name || !body.jobTitle) {
+    if (!body.name) {
       return NextResponse.json(
-        { error: "Name and job title are required" },
+        { error: "Company name is required" },
         { status: 400 }
       );
     }
 
-    // In production, save to database
-    const newCompany = {
-      id: Date.now().toString(),
-      ...body,
-      stage: body.stage || "WISHLIST",
-      priority: body.priority || "MEDIUM",
-      totalRounds: body.totalRounds || 4,
-      completedRounds: body.completedRounds || 0,
-      interviewers: body.interviewers || [],
-      createdAt: new Date().toISOString(),
-    };
+    // Get default stage (first enabled stage, usually WISHLIST)
+    const defaultStage = user.userStages[0];
 
-    return NextResponse.json({ company: newCompany }, { status: 201 });
+    const company = await db.company.create({
+      data: {
+        userId: user.id,
+        name: body.name,
+        website: body.website,
+        jobTitle: body.jobTitle,
+        jobUrl: body.jobUrl,
+        salary: body.salary,
+        location: body.location,
+        remote: body.remote ?? false,
+        priority: body.priority || "MEDIUM",
+        recruiterName: body.recruiterName,
+        recruiterEmail: body.recruiterEmail,
+        recruiterPhone: body.recruiterPhone,
+        notes: body.notes,
+        stageId: body.stageId || defaultStage?.id,
+      },
+      include: {
+        userStage: true,
+      },
+    });
+
+    return NextResponse.json({
+      company: {
+        ...company,
+        stage: company.userStage,
+        interviews: [],
+        totalRounds: 4,
+        completedRounds: 0,
+        emailCount: 0,
+      },
+    }, { status: 201 });
   } catch (error) {
     console.error("Error creating company:", error);
     return NextResponse.json(

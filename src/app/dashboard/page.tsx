@@ -1,16 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { isStageAdvancement, CELEBRATION_STAGES } from "@/lib/stages";
 
-// Dynamically load Clerk components only if configured
 const ClerkUserButton = dynamic(
   () => import("@clerk/nextjs").then(mod => mod.UserButton),
   { ssr: false, loading: () => <div className="w-8 h-8 rounded-full bg-[var(--secondary)]" /> }
 );
 
-type Stage = "WISHLIST" | "APPLIED" | "SCREENING" | "INTERVIEW" | "FINAL" | "OFFER" | "REJECTED";
+interface Stage {
+  id: string;
+  stageKey: string;
+  name: string;
+  emoji: string;
+  color: string;
+  order: number;
+  isEnabled: boolean;
+}
+
+interface Interview {
+  id: string;
+  title: string;
+  scheduledAt: string;
+  status: string;
+}
 
 interface Interviewer {
   name: string;
@@ -28,148 +43,211 @@ interface Company {
   website?: string;
   jobTitle: string;
   jobUrl?: string;
+  stageId: string;
   stage: Stage;
   priority: "HIGH" | "MEDIUM" | "LOW";
-  salary?: { min: number; max: number; currency: string };
+  salary?: string;
+  location?: string;
+  remote?: boolean;
+  recruiterName?: string;
+  recruiterEmail?: string;
+  recruiterPhone?: string;
   totalRounds: number;
   completedRounds: number;
+  interviews: Interview[];
   interviewers: Interviewer[];
   notes?: string;
-  nextInterviewDate?: string;
-  appliedDate?: string;
+  nextInterview?: Interview;
+  emailCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
-const STAGES: { key: Stage; label: string; color: string; emoji: string }[] = [
-  { key: "WISHLIST", label: "Wishlist", color: "border-l-slate-400", emoji: "⭐" },
-  { key: "APPLIED", label: "Applied", color: "border-l-indigo-500", emoji: "📨" },
-  { key: "SCREENING", label: "Screening", color: "border-l-purple-500", emoji: "📞" },
-  { key: "INTERVIEW", label: "Interviewing", color: "border-l-cyan-500", emoji: "💼" },
-  { key: "FINAL", label: "Final Round", color: "border-l-orange-500", emoji: "🎯" },
-  { key: "OFFER", label: "Offer", color: "border-l-green-500", emoji: "🎉" },
-];
+// Confetti function
+const fireConfetti = async (isBigCelebration: boolean = false) => {
+  const confetti = (await import("canvas-confetti")).default;
 
-const DEMO_COMPANIES: Company[] = [
-  {
-    id: "1",
-    name: "Google",
-    industry: "Tech",
-    size: "10,000+",
-    jobTitle: "Senior Software Engineer",
-    stage: "INTERVIEW",
-    priority: "HIGH",
-    salary: { min: 180000, max: 250000, currency: "USD" },
-    totalRounds: 5,
-    completedRounds: 2,
-    nextInterviewDate: "2025-01-28",
-    interviewers: [
-      { name: "Sarah Chen", role: "Technical Recruiter", linkedin: "linkedin.com/in/sarahchen" },
-      { name: "Mike Ross", role: "Engineering Manager", aiSummary: "10+ years at Google, leads the Search team. Previously at Microsoft." },
-    ],
-    appliedDate: "2025-01-15",
-  },
-  {
-    id: "2",
-    name: "Stripe",
-    industry: "Fintech",
-    size: "5,000+",
-    jobTitle: "Full Stack Engineer",
-    stage: "SCREENING",
-    priority: "HIGH",
-    salary: { min: 160000, max: 220000, currency: "USD" },
-    totalRounds: 4,
-    completedRounds: 1,
-    interviewers: [
-      { name: "David Kim", role: "Recruiter" },
-    ],
-    appliedDate: "2025-01-18",
-  },
-  {
-    id: "3",
-    name: "Airbnb",
-    industry: "Tech",
-    size: "5,000+",
-    jobTitle: "Backend Engineer",
-    stage: "APPLIED",
-    priority: "MEDIUM",
-    totalRounds: 4,
-    completedRounds: 0,
-    interviewers: [],
-    appliedDate: "2025-01-20",
-  },
-  {
-    id: "4",
-    name: "Netflix",
-    industry: "Entertainment",
-    size: "10,000+",
-    jobTitle: "Platform Engineer",
-    stage: "WISHLIST",
-    priority: "MEDIUM",
-    salary: { min: 200000, max: 300000, currency: "USD" },
-    totalRounds: 4,
-    completedRounds: 0,
-    interviewers: [],
-  },
-  {
-    id: "5",
-    name: "OpenAI",
-    industry: "AI",
-    size: "1,000+",
-    jobTitle: "ML Engineer",
-    stage: "OFFER",
-    priority: "HIGH",
-    salary: { min: 250000, max: 350000, currency: "USD" },
-    totalRounds: 5,
-    completedRounds: 5,
-    interviewers: [
-      { name: "Lisa Wang", role: "Hiring Manager", aiSummary: "Research Scientist at OpenAI, PhD from Stanford in ML." },
-    ],
-    appliedDate: "2025-01-05",
-  },
-];
+  if (isBigCelebration) {
+    // Big celebration for offer/accepted
+    const duration = 3000;
+    const end = Date.now() + duration;
+
+    const frame = () => {
+      confetti({
+        particleCount: 5,
+        angle: 60,
+        spread: 55,
+        origin: { x: 0, y: 0.8 },
+        colors: ["#6366f1", "#22d3ee", "#10b981", "#f59e0b", "#ef4444"],
+      });
+      confetti({
+        particleCount: 5,
+        angle: 120,
+        spread: 55,
+        origin: { x: 1, y: 0.8 },
+        colors: ["#6366f1", "#22d3ee", "#10b981", "#f59e0b", "#ef4444"],
+      });
+
+      if (Date.now() < end) {
+        requestAnimationFrame(frame);
+      }
+    };
+    frame();
+  } else {
+    // Standard confetti for forward movement
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.6 },
+      colors: ["#6366f1", "#22d3ee", "#10b981"],
+    });
+  }
+};
 
 export default function Dashboard() {
-  const [companies, setCompanies] = useState<Company[]>(DEMO_COMPANIES);
+  const [stages, setStages] = useState<Stage[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [showCompanyModal, setShowCompanyModal] = useState(false);
   const [draggedCompany, setDraggedCompany] = useState<Company | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [searchingAI, setSearchingAI] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [bookingSlug, setBookingSlug] = useState<string>("");
+  const previousStagesRef = useRef<Record<string, string>>({});
 
-  const bookingLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/book/me`;
+  const bookingLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/book/${bookingSlug}`;
+
+  // Fetch stages and companies
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [stagesRes, companiesRes, userRes] = await Promise.all([
+          fetch("/api/stages"),
+          fetch("/api/companies"),
+          fetch("/api/user"),
+        ]);
+
+        if (stagesRes.ok) {
+          const data = await stagesRes.json();
+          setStages(data.stages.filter((s: Stage) => s.isEnabled));
+        }
+
+        if (companiesRes.ok) {
+          const data = await companiesRes.json();
+          setCompanies(data.companies);
+          // Store initial stages for tracking advancement
+          const stageMap: Record<string, string> = {};
+          data.companies.forEach((c: Company) => {
+            stageMap[c.id] = c.stage?.stageKey || "";
+          });
+          previousStagesRef.current = stageMap;
+        }
+
+        if (userRes.ok) {
+          const data = await userRes.json();
+          setBookingSlug(data.user.bookingLink?.slug || "me");
+        }
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   const handleDragStart = (company: Company) => {
     setDraggedCompany(company);
   };
 
-  const handleDrop = (stage: Stage) => {
-    if (draggedCompany) {
-      setCompanies(companies.map(c =>
-        c.id === draggedCompany.id ? { ...c, stage } : c
-      ));
+  const handleDrop = useCallback(async (targetStage: Stage) => {
+    if (!draggedCompany || draggedCompany.stageId === targetStage.id) {
       setDraggedCompany(null);
+      return;
     }
-  };
 
-  const formatSalary = (salary?: { min: number; max: number; currency: string }) => {
+    const oldStageKey = draggedCompany.stage?.stageKey || "";
+    const newStageKey = targetStage.stageKey;
+
+    // Optimistic update
+    setCompanies(prev => prev.map(c =>
+      c.id === draggedCompany.id
+        ? { ...c, stageId: targetStage.id, stage: targetStage }
+        : c
+    ));
+
+    // Check for stage advancement and trigger confetti
+    if (isStageAdvancement(oldStageKey, newStageKey)) {
+      const isBigCelebration = CELEBRATION_STAGES.includes(newStageKey);
+      fireConfetti(isBigCelebration);
+    }
+
+    // Persist to backend
+    try {
+      const response = await fetch(`/api/companies/${draggedCompany.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stageId: targetStage.id }),
+      });
+
+      if (!response.ok) {
+        // Revert on error
+        setCompanies(prev => prev.map(c =>
+          c.id === draggedCompany.id
+            ? { ...c, stageId: draggedCompany.stageId, stage: draggedCompany.stage }
+            : c
+        ));
+      } else {
+        // Update previous stages ref
+        previousStagesRef.current[draggedCompany.id] = newStageKey;
+      }
+    } catch (error) {
+      console.error("Error updating company stage:", error);
+      // Revert on error
+      setCompanies(prev => prev.map(c =>
+        c.id === draggedCompany.id
+          ? { ...c, stageId: draggedCompany.stageId, stage: draggedCompany.stage }
+          : c
+      ));
+    }
+
+    setDraggedCompany(null);
+  }, [draggedCompany]);
+
+  const formatSalary = (salary?: string) => {
     if (!salary) return "Not specified";
-    const format = (n: number) => `$${(n / 1000).toFixed(0)}k`;
-    return `${format(salary.min)} - ${format(salary.max)}`;
+    return salary;
   };
 
   const searchInterviewerAI = async (interviewer: Interviewer, companyName: string) => {
     setSearchingAI(interviewer.name);
-    // Simulate AI search - in production this would call the AI API
-    await new Promise(resolve => setTimeout(resolve, 1500));
-
-    const summary = `${interviewer.name} is a ${interviewer.role} at ${companyName}. Based on LinkedIn and public data: 8+ years in tech, previously at major companies. Known for technical interviews focusing on system design.`;
-
-    if (selectedCompany) {
-      setSelectedCompany({
-        ...selectedCompany,
-        interviewers: selectedCompany.interviewers.map(i =>
-          i.name === interviewer.name ? { ...i, aiSummary: summary } : i
-        ),
+    try {
+      const response = await fetch("/api/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "search_interviewer",
+          name: interviewer.name,
+          role: interviewer.role,
+          company: companyName,
+        }),
       });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (selectedCompany) {
+          setSelectedCompany({
+            ...selectedCompany,
+            interviewers: selectedCompany.interviewers.map(i =>
+              i.name === interviewer.name ? { ...i, aiSummary: data.summary } : i
+            ),
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error searching interviewer:", error);
     }
     setSearchingAI(null);
   };
@@ -178,27 +256,89 @@ export default function Dashboard() {
     if (selectedCompany) {
       setSelectedCompany({
         ...selectedCompany,
-        interviewers: [...selectedCompany.interviewers, { name: "", role: "" }],
+        interviewers: [...(selectedCompany.interviewers || []), { name: "", role: "" }],
       });
     }
   };
 
   const updateInterviewer = (index: number, field: keyof Interviewer, value: string) => {
     if (selectedCompany) {
-      const updated = [...selectedCompany.interviewers];
+      const updated = [...(selectedCompany.interviewers || [])];
       updated[index] = { ...updated[index], [field]: value };
       setSelectedCompany({ ...selectedCompany, interviewers: updated });
     }
   };
 
-  const saveCompany = () => {
-    if (selectedCompany) {
-      setCompanies(companies.map(c =>
-        c.id === selectedCompany.id ? selectedCompany : c
-      ));
-      setEditMode(false);
+  const saveCompany = async () => {
+    if (!selectedCompany) return;
+
+    try {
+      const isNew = !companies.find(c => c.id === selectedCompany.id);
+      const url = isNew ? "/api/companies" : `/api/companies/${selectedCompany.id}`;
+      const method = isNew ? "POST" : "PATCH";
+
+      const response = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: selectedCompany.name,
+          jobTitle: selectedCompany.jobTitle,
+          website: selectedCompany.website,
+          salary: selectedCompany.salary,
+          location: selectedCompany.location,
+          remote: selectedCompany.remote,
+          priority: selectedCompany.priority,
+          recruiterName: selectedCompany.recruiterName,
+          recruiterEmail: selectedCompany.recruiterEmail,
+          notes: selectedCompany.notes,
+          stageId: selectedCompany.stageId,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (isNew) {
+          setCompanies(prev => [...prev, data.company]);
+        } else {
+          setCompanies(prev => prev.map(c =>
+            c.id === selectedCompany.id ? { ...c, ...data.company } : c
+          ));
+        }
+        setEditMode(false);
+        setShowCompanyModal(false);
+      }
+    } catch (error) {
+      console.error("Error saving company:", error);
     }
   };
+
+  const deleteCompany = async () => {
+    if (!selectedCompany) return;
+
+    if (!confirm("Are you sure you want to delete this company?")) return;
+
+    try {
+      const response = await fetch(`/api/companies/${selectedCompany.id}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        setCompanies(prev => prev.filter(c => c.id !== selectedCompany.id));
+        setShowCompanyModal(false);
+        setSelectedCompany(null);
+      }
+    } catch (error) {
+      console.error("Error deleting company:", error);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[var(--background)] flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-2 border-[var(--primary)] border-t-transparent rounded-full" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
@@ -236,16 +376,25 @@ export default function Dashboard() {
                 📋 Copy Link
               </button>
             </div>
+            <Link
+              href="/settings?tab=pipeline"
+              className="btn btn-secondary text-sm hidden md:flex items-center gap-1"
+            >
+              ⚙️ Customize Stages
+            </Link>
             <button
               onClick={() => {
+                const defaultStage = stages[0];
                 setSelectedCompany({
-                  id: Date.now().toString(),
+                  id: "",
                   name: "",
                   jobTitle: "",
-                  stage: "WISHLIST",
+                  stageId: defaultStage?.id || "",
+                  stage: defaultStage,
                   priority: "MEDIUM",
                   totalRounds: 4,
                   completedRounds: 0,
+                  interviews: [],
                   interviewers: [],
                 });
                 setEditMode(true);
@@ -262,113 +411,125 @@ export default function Dashboard() {
 
       {/* Kanban Board */}
       <main className="max-w-[1800px] mx-auto p-4">
-        <div className="flex gap-3 overflow-x-auto pb-4">
-          {STAGES.map((stage) => {
-            const stageCompanies = companies.filter(c => c.stage === stage.key);
-            return (
-              <div
-                key={stage.key}
-                className="min-w-[300px] max-w-[300px] flex-shrink-0"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={() => handleDrop(stage.key)}
-              >
-                {/* Column Header */}
-                <div className="flex items-center gap-2 mb-3 px-2">
-                  <span>{stage.emoji}</span>
-                  <h3 className="font-semibold text-sm">{stage.label}</h3>
-                  <span className="ml-auto bg-[var(--secondary)] px-2 py-0.5 rounded-full text-xs">
-                    {stageCompanies.length}
-                  </span>
-                </div>
+        {stages.length === 0 ? (
+          <div className="text-center py-20">
+            <p className="text-[var(--muted)] mb-4">No pipeline stages configured.</p>
+            <Link href="/settings?tab=pipeline" className="btn btn-primary">
+              Configure Stages
+            </Link>
+          </div>
+        ) : (
+          <div className="flex gap-3 overflow-x-auto pb-4">
+            {stages.map((stage) => {
+              const stageCompanies = companies.filter(c => c.stageId === stage.id);
+              return (
+                <div
+                  key={stage.id}
+                  className="min-w-[300px] max-w-[300px] flex-shrink-0"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => handleDrop(stage)}
+                >
+                  {/* Column Header */}
+                  <div className="flex items-center gap-2 mb-3 px-2">
+                    <span>{stage.emoji}</span>
+                    <h3 className="font-semibold text-sm">{stage.name}</h3>
+                    <span className="ml-auto bg-[var(--secondary)] px-2 py-0.5 rounded-full text-xs">
+                      {stageCompanies.length}
+                    </span>
+                  </div>
 
-                {/* Cards */}
-                <div className="kanban-column min-h-[calc(100vh-180px)]">
-                  {stageCompanies.map((company) => (
-                    <div
-                      key={company.id}
-                      draggable
-                      onDragStart={() => handleDragStart(company)}
-                      onClick={() => {
-                        setSelectedCompany(company);
-                        setShowCompanyModal(true);
-                        setEditMode(false);
-                      }}
-                      className={`kanban-card ${stage.color} border-l-4 ${
-                        draggedCompany?.id === company.id ? "opacity-50" : ""
-                      }`}
-                    >
-                      {/* Company Header */}
-                      <div className="flex items-start justify-between mb-2">
-                        <div>
-                          <h4 className="font-semibold">{company.name}</h4>
-                          <p className="text-sm text-[var(--muted)]">{company.jobTitle}</p>
+                  {/* Cards */}
+                  <div
+                    className="kanban-column min-h-[calc(100vh-180px)] rounded-lg p-2"
+                    style={{ borderLeft: `4px solid ${stage.color}` }}
+                  >
+                    {stageCompanies.map((company) => (
+                      <div
+                        key={company.id}
+                        draggable
+                        onDragStart={() => handleDragStart(company)}
+                        onClick={() => {
+                          setSelectedCompany(company);
+                          setShowCompanyModal(true);
+                          setEditMode(false);
+                        }}
+                        className={`kanban-card cursor-pointer ${
+                          draggedCompany?.id === company.id ? "opacity-50" : ""
+                        }`}
+                      >
+                        {/* Company Header */}
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <h4 className="font-semibold">{company.name}</h4>
+                            <p className="text-sm text-[var(--muted)]">{company.jobTitle}</p>
+                          </div>
+                          <span className={`text-xs px-2 py-0.5 rounded ${
+                            company.priority === "HIGH" ? "bg-red-500/20 text-red-400" :
+                            company.priority === "MEDIUM" ? "bg-yellow-500/20 text-yellow-400" :
+                            "bg-slate-500/20 text-slate-400"
+                          }`}>
+                            {company.priority}
+                          </span>
                         </div>
-                        <span className={`text-xs px-2 py-0.5 rounded ${
-                          company.priority === "HIGH" ? "bg-red-500/20 text-red-400" :
-                          company.priority === "MEDIUM" ? "bg-yellow-500/20 text-yellow-400" :
-                          "bg-slate-500/20 text-slate-400"
-                        }`}>
-                          {company.priority}
-                        </span>
-                      </div>
 
-                      {/* Salary */}
-                      {company.salary && (
-                        <p className="text-sm text-green-400 mb-2">
-                          💰 {formatSalary(company.salary)}
-                        </p>
-                      )}
+                        {/* Salary */}
+                        {company.salary && (
+                          <p className="text-sm text-green-400 mb-2">
+                            💰 {formatSalary(company.salary)}
+                          </p>
+                        )}
 
-                      {/* Progress */}
-                      <div className="mb-2">
-                        <div className="flex items-center justify-between text-xs text-[var(--muted)] mb-1">
-                          <span>Round {company.completedRounds}/{company.totalRounds}</span>
-                          <span>{Math.round((company.completedRounds / company.totalRounds) * 100)}%</span>
-                        </div>
-                        <div className="h-1.5 bg-[var(--background)] rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-[var(--primary)] rounded-full transition-all"
-                            style={{ width: `${(company.completedRounds / company.totalRounds) * 100}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Interviewers */}
-                      {company.interviewers.length > 0 && (
-                        <div className="flex items-center gap-1 mb-2">
-                          <span className="text-xs text-[var(--muted)]">👥</span>
-                          <div className="flex -space-x-2">
-                            {company.interviewers.slice(0, 3).map((interviewer, i) => (
-                              <div
-                                key={i}
-                                className="w-6 h-6 rounded-full bg-[var(--primary)]/30 flex items-center justify-center text-xs border-2 border-[var(--secondary)]"
-                                title={interviewer.name}
-                              >
-                                {interviewer.name.charAt(0)}
-                              </div>
-                            ))}
-                            {company.interviewers.length > 3 && (
-                              <div className="w-6 h-6 rounded-full bg-[var(--secondary)] flex items-center justify-center text-xs border-2 border-[var(--secondary)]">
-                                +{company.interviewers.length - 3}
-                              </div>
-                            )}
+                        {/* Progress */}
+                        <div className="mb-2">
+                          <div className="flex items-center justify-between text-xs text-[var(--muted)] mb-1">
+                            <span>Round {company.completedRounds}/{company.totalRounds}</span>
+                            <span>{Math.round((company.completedRounds / company.totalRounds) * 100)}%</span>
+                          </div>
+                          <div className="h-1.5 bg-[var(--background)] rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-[var(--primary)] rounded-full transition-all"
+                              style={{ width: `${(company.completedRounds / company.totalRounds) * 100}%` }}
+                            />
                           </div>
                         </div>
-                      )}
 
-                      {/* Next Interview */}
-                      {company.nextInterviewDate && (
-                        <p className="text-xs text-cyan-400">
-                          📅 Next: {new Date(company.nextInterviewDate).toLocaleDateString()}
-                        </p>
-                      )}
-                    </div>
-                  ))}
+                        {/* Interviewers */}
+                        {company.interviewers && company.interviewers.length > 0 && (
+                          <div className="flex items-center gap-1 mb-2">
+                            <span className="text-xs text-[var(--muted)]">👥</span>
+                            <div className="flex -space-x-2">
+                              {company.interviewers.slice(0, 3).map((interviewer, i) => (
+                                <div
+                                  key={i}
+                                  className="w-6 h-6 rounded-full bg-[var(--primary)]/30 flex items-center justify-center text-xs border-2 border-[var(--secondary)]"
+                                  title={interviewer.name}
+                                >
+                                  {interviewer.name?.charAt(0) || "?"}
+                                </div>
+                              ))}
+                              {company.interviewers.length > 3 && (
+                                <div className="w-6 h-6 rounded-full bg-[var(--secondary)] flex items-center justify-center text-xs border-2 border-[var(--secondary)]">
+                                  +{company.interviewers.length - 3}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Next Interview */}
+                        {company.nextInterview && (
+                          <p className="text-xs text-cyan-400">
+                            📅 Next: {new Date(company.nextInterview.scheduledAt).toLocaleDateString()}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </main>
 
       {/* Company Detail Modal */}
@@ -377,13 +538,13 @@ export default function Dashboard() {
           <div className="modal-content max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-start justify-between mb-6">
-              <div>
+              <div className="flex-1">
                 {editMode ? (
                   <input
                     type="text"
                     value={selectedCompany.name}
                     onChange={(e) => setSelectedCompany({ ...selectedCompany, name: e.target.value })}
-                    className="input text-xl font-bold mb-1"
+                    className="input text-xl font-bold mb-1 w-full"
                     placeholder="Company name"
                   />
                 ) : (
@@ -392,9 +553,9 @@ export default function Dashboard() {
                 {editMode ? (
                   <input
                     type="text"
-                    value={selectedCompany.jobTitle}
+                    value={selectedCompany.jobTitle || ""}
                     onChange={(e) => setSelectedCompany({ ...selectedCompany, jobTitle: e.target.value })}
-                    className="input text-sm"
+                    className="input text-sm w-full"
                     placeholder="Job title"
                   />
                 ) : (
@@ -403,9 +564,16 @@ export default function Dashboard() {
               </div>
               <div className="flex items-center gap-2">
                 {editMode ? (
-                  <button onClick={saveCompany} className="btn btn-primary text-sm">
-                    Save
-                  </button>
+                  <>
+                    <button onClick={saveCompany} className="btn btn-primary text-sm">
+                      Save
+                    </button>
+                    {selectedCompany.id && (
+                      <button onClick={deleteCompany} className="btn btn-danger text-sm">
+                        Delete
+                      </button>
+                    )}
+                  </>
                 ) : (
                   <button onClick={() => setEditMode(true)} className="btn btn-secondary text-sm">
                     ✏️ Edit
@@ -417,61 +585,69 @@ export default function Dashboard() {
               </div>
             </div>
 
+            {/* Stage Selector (Edit Mode) */}
+            {editMode && (
+              <div className="mb-4">
+                <label className="text-xs text-[var(--muted)] uppercase tracking-wider">Stage</label>
+                <select
+                  value={selectedCompany.stageId}
+                  onChange={(e) => {
+                    const stage = stages.find(s => s.id === e.target.value);
+                    if (stage) {
+                      setSelectedCompany({ ...selectedCompany, stageId: stage.id, stage });
+                    }
+                  }}
+                  className="input mt-1 w-full"
+                >
+                  {stages.map((stage) => (
+                    <option key={stage.id} value={stage.id}>
+                      {stage.emoji} {stage.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Company Info Grid */}
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div>
-                <label className="text-xs text-[var(--muted)] uppercase tracking-wider">Industry</label>
+                <label className="text-xs text-[var(--muted)] uppercase tracking-wider">Website</label>
                 {editMode ? (
                   <input
                     type="text"
-                    value={selectedCompany.industry || ""}
-                    onChange={(e) => setSelectedCompany({ ...selectedCompany, industry: e.target.value })}
+                    value={selectedCompany.website || ""}
+                    onChange={(e) => setSelectedCompany({ ...selectedCompany, website: e.target.value })}
                     className="input mt-1"
-                    placeholder="e.g., Tech, Fintech"
+                    placeholder="https://company.com"
                   />
                 ) : (
-                  <p className="font-medium">{selectedCompany.industry || "—"}</p>
+                  <p className="font-medium">{selectedCompany.website || "—"}</p>
                 )}
               </div>
               <div>
-                <label className="text-xs text-[var(--muted)] uppercase tracking-wider">Company Size</label>
+                <label className="text-xs text-[var(--muted)] uppercase tracking-wider">Location</label>
                 {editMode ? (
                   <input
                     type="text"
-                    value={selectedCompany.size || ""}
-                    onChange={(e) => setSelectedCompany({ ...selectedCompany, size: e.target.value })}
+                    value={selectedCompany.location || ""}
+                    onChange={(e) => setSelectedCompany({ ...selectedCompany, location: e.target.value })}
                     className="input mt-1"
-                    placeholder="e.g., 1,000+"
+                    placeholder="San Francisco, CA"
                   />
                 ) : (
-                  <p className="font-medium">{selectedCompany.size || "—"}</p>
+                  <p className="font-medium">{selectedCompany.location || "—"}</p>
                 )}
               </div>
               <div>
                 <label className="text-xs text-[var(--muted)] uppercase tracking-wider">Salary Range</label>
                 {editMode ? (
-                  <div className="flex gap-2 mt-1">
-                    <input
-                      type="number"
-                      value={selectedCompany.salary?.min || ""}
-                      onChange={(e) => setSelectedCompany({
-                        ...selectedCompany,
-                        salary: { ...selectedCompany.salary, min: parseInt(e.target.value), max: selectedCompany.salary?.max || 0, currency: "USD" }
-                      })}
-                      className="input"
-                      placeholder="Min"
-                    />
-                    <input
-                      type="number"
-                      value={selectedCompany.salary?.max || ""}
-                      onChange={(e) => setSelectedCompany({
-                        ...selectedCompany,
-                        salary: { ...selectedCompany.salary, max: parseInt(e.target.value), min: selectedCompany.salary?.min || 0, currency: "USD" }
-                      })}
-                      className="input"
-                      placeholder="Max"
-                    />
-                  </div>
+                  <input
+                    type="text"
+                    value={selectedCompany.salary || ""}
+                    onChange={(e) => setSelectedCompany({ ...selectedCompany, salary: e.target.value })}
+                    className="input mt-1"
+                    placeholder="$150k - $200k"
+                  />
                 ) : (
                   <p className="font-medium text-green-400">{formatSalary(selectedCompany.salary)}</p>
                 )}
@@ -499,49 +675,32 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Interview Rounds */}
+            {/* Recruiter Info */}
             <div className="mb-6">
-              <label className="text-xs text-[var(--muted)] uppercase tracking-wider">Interview Progress</label>
-              <div className="flex items-center gap-4 mt-2">
-                {editMode ? (
-                  <>
-                    <div>
-                      <span className="text-xs text-[var(--muted)]">Completed</span>
-                      <input
-                        type="number"
-                        value={selectedCompany.completedRounds}
-                        onChange={(e) => setSelectedCompany({ ...selectedCompany, completedRounds: parseInt(e.target.value) })}
-                        className="input w-20"
-                        min={0}
-                      />
-                    </div>
-                    <span>/</span>
-                    <div>
-                      <span className="text-xs text-[var(--muted)]">Total Rounds</span>
-                      <input
-                        type="number"
-                        value={selectedCompany.totalRounds}
-                        onChange={(e) => setSelectedCompany({ ...selectedCompany, totalRounds: parseInt(e.target.value) })}
-                        className="input w-20"
-                        min={1}
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <span>Round {selectedCompany.completedRounds} of {selectedCompany.totalRounds}</span>
-                      <span>{Math.round((selectedCompany.completedRounds / selectedCompany.totalRounds) * 100)}%</span>
-                    </div>
-                    <div className="h-2 bg-[var(--background)] rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-[var(--primary)] rounded-full"
-                        style={{ width: `${(selectedCompany.completedRounds / selectedCompany.totalRounds) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
+              <label className="text-xs text-[var(--muted)] uppercase tracking-wider">Recruiter Contact</label>
+              {editMode ? (
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <input
+                    type="text"
+                    value={selectedCompany.recruiterName || ""}
+                    onChange={(e) => setSelectedCompany({ ...selectedCompany, recruiterName: e.target.value })}
+                    className="input"
+                    placeholder="Recruiter name"
+                  />
+                  <input
+                    type="email"
+                    value={selectedCompany.recruiterEmail || ""}
+                    onChange={(e) => setSelectedCompany({ ...selectedCompany, recruiterEmail: e.target.value })}
+                    className="input"
+                    placeholder="recruiter@company.com"
+                  />
+                </div>
+              ) : (
+                <p className="font-medium mt-1">
+                  {selectedCompany.recruiterName || "—"}
+                  {selectedCompany.recruiterEmail && ` (${selectedCompany.recruiterEmail})`}
+                </p>
+              )}
             </div>
 
             {/* Interviewers Section */}
@@ -556,25 +715,25 @@ export default function Dashboard() {
               </div>
 
               <div className="space-y-3">
-                {selectedCompany.interviewers.map((interviewer, index) => (
+                {(selectedCompany.interviewers || []).map((interviewer, index) => (
                   <div key={index} className="card bg-[var(--background)]">
                     <div className="flex items-start gap-3">
                       <div className="w-10 h-10 rounded-full bg-[var(--primary)]/30 flex items-center justify-center font-bold">
-                        {interviewer.name.charAt(0) || "?"}
+                        {interviewer.name?.charAt(0) || "?"}
                       </div>
                       <div className="flex-1">
                         {editMode ? (
                           <div className="space-y-2">
                             <input
                               type="text"
-                              value={interviewer.name}
+                              value={interviewer.name || ""}
                               onChange={(e) => updateInterviewer(index, "name", e.target.value)}
                               className="input"
                               placeholder="Name"
                             />
                             <input
                               type="text"
-                              value={interviewer.role}
+                              value={interviewer.role || ""}
                               onChange={(e) => updateInterviewer(index, "role", e.target.value)}
                               className="input"
                               placeholder="Role (e.g., Hiring Manager)"
@@ -621,7 +780,7 @@ export default function Dashboard() {
                   </div>
                 ))}
 
-                {selectedCompany.interviewers.length === 0 && !editMode && (
+                {(!selectedCompany.interviewers || selectedCompany.interviewers.length === 0) && !editMode && (
                   <p className="text-sm text-[var(--muted)] text-center py-4">
                     No contacts added yet. Click Edit to add interviewers.
                   </p>
@@ -636,7 +795,7 @@ export default function Dashboard() {
                 <textarea
                   value={selectedCompany.notes || ""}
                   onChange={(e) => setSelectedCompany({ ...selectedCompany, notes: e.target.value })}
-                  className="input mt-1 min-h-[100px]"
+                  className="input mt-1 min-h-[100px] w-full"
                   placeholder="Add notes about this opportunity..."
                 />
               ) : (
@@ -645,20 +804,25 @@ export default function Dashboard() {
             </div>
 
             {/* Quick Actions */}
-            {!editMode && (
+            {!editMode && selectedCompany.id && (
               <div className="flex flex-wrap gap-2">
-                <button className="quick-action">
-                  <span>📧</span> Email Contact
-                </button>
+                {selectedCompany.recruiterEmail && (
+                  <a
+                    href={`mailto:${selectedCompany.recruiterEmail}`}
+                    className="quick-action"
+                  >
+                    <span>📧</span> Email Contact
+                  </a>
+                )}
                 <button
                   onClick={() => navigator.clipboard.writeText(bookingLink)}
                   className="quick-action"
                 >
                   <span>🔗</span> Share Booking Link
                 </button>
-                <button className="quick-action">
-                  <span>📅</span> Schedule Interview
-                </button>
+                <Link href="/emails" className="quick-action">
+                  <span>📨</span> View Emails ({selectedCompany.emailCount || 0})
+                </Link>
               </div>
             )}
           </div>

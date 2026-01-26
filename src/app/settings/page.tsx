@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { STAGE_DEFINITIONS } from "@/lib/stages";
 
+type TabKey = "availability" | "pipeline" | "integrations" | "templates" | "profile";
 type DayOfWeek = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
 
 interface TimeSlot {
@@ -16,6 +19,16 @@ interface DayAvailability {
 }
 
 type Availability = Record<DayOfWeek, DayAvailability>;
+
+interface Stage {
+  id: string;
+  stageKey: string;
+  name: string;
+  emoji: string;
+  color: string;
+  order: number;
+  isEnabled: boolean;
+}
 
 const DEFAULT_AVAILABILITY: Availability = {
   monday: { enabled: true, slots: [{ start: "09:00", end: "17:00" }] },
@@ -68,11 +81,19 @@ Best regards,
 ];
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<"availability" | "integrations" | "templates" | "profile">("availability");
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab") as TabKey | null;
+
+  const [activeTab, setActiveTab] = useState<TabKey>(tabParam || "availability");
   const [availability, setAvailability] = useState<Availability>(DEFAULT_AVAILABILITY);
   const [templates, setTemplates] = useState<EmailTemplate[]>(DEFAULT_TEMPLATES);
   const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null);
   const [saved, setSaved] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Stage management
+  const [userStages, setUserStages] = useState<Stage[]>([]);
+  const [draggedStage, setDraggedStage] = useState<Stage | null>(null);
 
   // Integration states
   const [googleConnected, setGoogleConnected] = useState(false);
@@ -90,9 +111,66 @@ export default function SettingsPage() {
 
   const bookingLink = typeof window !== 'undefined' ? `${window.location.origin}/book/${profile.bookingSlug}` : '';
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  // Fetch user data on mount
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [userRes, stagesRes] = await Promise.all([
+          fetch("/api/user"),
+          fetch("/api/stages"),
+        ]);
+
+        if (userRes.ok) {
+          const data = await userRes.json();
+          setProfile({
+            name: data.user.name || "",
+            email: data.user.email || "",
+            phone: data.user.phone || "",
+            timezone: data.user.timezone || "America/Los_Angeles",
+            bookingSlug: data.user.bookingLink?.slug || "me",
+            defaultMeetingDuration: data.user.bookingLink?.duration || 30,
+          });
+          setGoogleConnected(data.user.googleConnected);
+        }
+
+        if (stagesRes.ok) {
+          const data = await stagesRes.json();
+          setUserStages(data.stages);
+        }
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // Update tab from URL
+  useEffect(() => {
+    if (tabParam && ["availability", "pipeline", "integrations", "templates", "profile"].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
+
+  const handleSave = async () => {
+    try {
+      await fetch("/api/user", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: profile.name,
+          phone: profile.phone,
+          timezone: profile.timezone,
+          bookingSlug: profile.bookingSlug,
+        }),
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (error) {
+      console.error("Error saving:", error);
+    }
   };
 
   const toggleDay = (day: DayOfWeek) => {
@@ -138,6 +216,105 @@ export default function SettingsPage() {
     }));
   };
 
+  // Stage management functions
+  const toggleStage = async (stageKey: string) => {
+    const existingStage = userStages.find(s => s.stageKey === stageKey);
+
+    if (existingStage) {
+      // Disable existing stage
+      try {
+        await fetch(`/api/stages?id=${existingStage.id}`, { method: "DELETE" });
+        setUserStages(prev => prev.map(s =>
+          s.id === existingStage.id ? { ...s, isEnabled: false } : s
+        ));
+      } catch (error) {
+        console.error("Error disabling stage:", error);
+      }
+    } else {
+      // Enable new stage
+      try {
+        const response = await fetch("/api/stages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ stageKey }),
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setUserStages(prev => [...prev, data.stage]);
+        }
+      } catch (error) {
+        console.error("Error enabling stage:", error);
+      }
+    }
+  };
+
+  const handleStageDragStart = (stage: Stage) => {
+    setDraggedStage(stage);
+  };
+
+  const handleStageDrop = async (targetIndex: number) => {
+    if (!draggedStage) return;
+
+    const enabledStages = userStages.filter(s => s.isEnabled).sort((a, b) => a.order - b.order);
+    const currentIndex = enabledStages.findIndex(s => s.id === draggedStage.id);
+
+    if (currentIndex === targetIndex) {
+      setDraggedStage(null);
+      return;
+    }
+
+    // Reorder stages
+    const newStages = [...enabledStages];
+    newStages.splice(currentIndex, 1);
+    newStages.splice(targetIndex, 0, draggedStage);
+
+    // Update order numbers
+    const updatedStages = newStages.map((s, i) => ({ ...s, order: i }));
+
+    setUserStages(prev => {
+      const disabledStages = prev.filter(s => !s.isEnabled);
+      return [...updatedStages, ...disabledStages];
+    });
+
+    // Persist to backend
+    try {
+      await fetch("/api/stages", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stages: updatedStages.map(s => ({ id: s.id, order: s.order, isEnabled: s.isEnabled })),
+        }),
+      });
+    } catch (error) {
+      console.error("Error reordering stages:", error);
+    }
+
+    setDraggedStage(null);
+  };
+
+  const connectGoogle = async () => {
+    try {
+      const response = await fetch("/api/auth/google");
+      const data = await response.json();
+      if (data.authUrl) {
+        window.location.href = data.authUrl;
+      }
+    } catch (error) {
+      console.error("Error connecting Google:", error);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[var(--background)] flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-2 border-[var(--primary)] border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  const enabledStages = userStages.filter(s => s.isEnabled).sort((a, b) => a.order - b.order);
+  const enabledStageKeys = new Set(enabledStages.map(s => s.stageKey));
+
   return (
     <div className="min-h-screen bg-[var(--background)]">
       {/* Header */}
@@ -177,13 +354,14 @@ export default function SettingsPage() {
             <nav className="space-y-1">
               {[
                 { key: "availability", label: "Availability", icon: "📅" },
+                { key: "pipeline", label: "Pipeline Stages", icon: "🔄" },
                 { key: "integrations", label: "Integrations", icon: "🔗" },
                 { key: "templates", label: "Email Templates", icon: "📧" },
                 { key: "profile", label: "Profile", icon: "👤" },
               ].map(item => (
                 <button
                   key={item.key}
-                  onClick={() => setActiveTab(item.key as typeof activeTab)}
+                  onClick={() => setActiveTab(item.key as TabKey)}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-colors ${
                     activeTab === item.key
                       ? "bg-[var(--primary)]/20 text-[var(--primary)]"
@@ -204,7 +382,7 @@ export default function SettingsPage() {
               <div>
                 <h1 className="text-2xl font-bold mb-2">Availability</h1>
                 <p className="text-[var(--muted)] mb-6">
-                  Set when you're available for interviews. Recruiters will only see these times.
+                  Set when you&apos;re available for interviews. Recruiters will only see these times.
                 </p>
 
                 {/* Booking Link */}
@@ -294,6 +472,85 @@ export default function SettingsPage() {
               </div>
             )}
 
+            {/* Pipeline Stages Tab */}
+            {activeTab === "pipeline" && (
+              <div>
+                <h1 className="text-2xl font-bold mb-2">Pipeline Stages</h1>
+                <p className="text-[var(--muted)] mb-6">
+                  Customize which stages appear in your pipeline and their order.
+                </p>
+
+                {/* Active Stages */}
+                <div className="mb-8">
+                  <h3 className="font-semibold mb-4">Active Stages (drag to reorder)</h3>
+                  <div className="space-y-2">
+                    {enabledStages.map((stage, index) => (
+                      <div
+                        key={stage.id}
+                        draggable
+                        onDragStart={() => handleStageDragStart(stage)}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={() => handleStageDrop(index)}
+                        className={`card flex items-center gap-4 cursor-move ${
+                          draggedStage?.id === stage.id ? "opacity-50" : ""
+                        }`}
+                        style={{ borderLeft: `4px solid ${stage.color}` }}
+                      >
+                        <span className="text-xl">{stage.emoji}</span>
+                        <span className="font-medium flex-1">{stage.name}</span>
+                        <button
+                          onClick={() => toggleStage(stage.stageKey)}
+                          className="text-sm text-red-400 hover:underline"
+                        >
+                          Remove
+                        </button>
+                        <span className="text-[var(--muted)] cursor-grab">⋮⋮</span>
+                      </div>
+                    ))}
+
+                    {enabledStages.length === 0 && (
+                      <p className="text-center text-[var(--muted)] py-8">
+                        No stages enabled. Add stages from the library below.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Stage Library */}
+                <div>
+                  <h3 className="font-semibold mb-4">Stage Library</h3>
+                  <p className="text-sm text-[var(--muted)] mb-4">
+                    Click to add stages to your pipeline
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {STAGE_DEFINITIONS.map((stageDef) => {
+                      const isEnabled = enabledStageKeys.has(stageDef.key);
+                      return (
+                        <button
+                          key={stageDef.key}
+                          onClick={() => !isEnabled && toggleStage(stageDef.key)}
+                          disabled={isEnabled}
+                          className={`p-3 rounded-lg border text-left transition-all ${
+                            isEnabled
+                              ? "opacity-50 cursor-not-allowed bg-[var(--secondary)] border-[var(--border)]"
+                              : "hover:border-[var(--primary)] hover:bg-[var(--primary)]/10 border-[var(--border)]"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span>{stageDef.emoji}</span>
+                            <span className="font-medium text-sm">{stageDef.name}</span>
+                          </div>
+                          {isEnabled && (
+                            <span className="text-xs text-green-400 mt-1 block">✓ Active</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Integrations Tab */}
             {activeTab === "integrations" && (
               <div>
@@ -321,7 +578,7 @@ export default function SettingsPage() {
                         </div>
                       </div>
                       <button
-                        onClick={() => setGoogleConnected(!googleConnected)}
+                        onClick={googleConnected ? undefined : connectGoogle}
                         className={`btn ${googleConnected ? "btn-danger" : "btn-primary"}`}
                       >
                         {googleConnected ? "Disconnect" : "Connect"}
@@ -331,7 +588,7 @@ export default function SettingsPage() {
                       <div className="mt-4 pt-4 border-t border-[var(--border)]">
                         <div className="flex items-center gap-2 text-sm text-green-400">
                           <span>✓</span>
-                          <span>Connected as demo@gmail.com</span>
+                          <span>Connected</span>
                         </div>
                         <div className="mt-3 space-y-2">
                           <label className="flex items-center gap-2 text-sm">
@@ -476,8 +733,8 @@ export default function SettingsPage() {
                       <input
                         type="email"
                         value={profile.email}
-                        onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                        className="input"
+                        readOnly
+                        className="input bg-[var(--background)]"
                         placeholder="john@example.com"
                       />
                     </div>

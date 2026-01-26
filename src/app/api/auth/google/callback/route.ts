@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { google } from "googleapis";
+import { db } from "@/lib/db";
 
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
@@ -36,15 +37,15 @@ export async function GET(request: NextRequest) {
     // Exchange code for tokens
     const { tokens } = await oauth2Client.getToken(code);
 
-    // In production, save tokens to database for the user
-    // await db.user.update({
-    //   where: { clerkId: userId },
-    //   data: {
-    //     googleAccessToken: tokens.access_token,
-    //     googleRefreshToken: tokens.refresh_token,
-    //     googleTokenExpiry: new Date(tokens.expiry_date || 0),
-    //   },
-    // });
+    // Save tokens to database for the user
+    await db.user.update({
+      where: { clerkId: userId },
+      data: {
+        googleAccessToken: tokens.access_token,
+        googleRefreshToken: tokens.refresh_token,
+        googleTokenExpiry: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
+      },
+    });
 
     console.log("Google OAuth successful for user:", userId);
 

@@ -9,20 +9,43 @@ datasource db {
 }
 
 model User {
-  id                String              @id @default(cuid())
-  clerkId           String              @unique
-  email             String              @unique
-  name              String?
-  googleAccessToken String?
-  googleRefreshToken String?
-  googleTokenExpiry DateTime?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  id                   String              @id @default(cuid())
+  clerkId              String              @unique
+  email                String              @unique
+  name                 String?
+  phone                String?
+  timezone             String              @default("America/Los_Angeles")
+  onboardingCompleted  Boolean             @default(false)
+  onboardingStep       Int                 @default(0)
+  googleAccessToken    String?
+  googleRefreshToken   String?
+  googleTokenExpiry    DateTime?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
 
   companies         Company[]
   availabilitySlots AvailabilitySlot[]
   emailTemplates    EmailTemplate[]
   bookingLinks      BookingLink[]
+  userStages        UserStage[]
+}
+
+model UserStage {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stageKey  String   // e.g., "PHONE_SCREEN", "TECHNICAL", "ONSITE"
+  name      String   // Display name
+  emoji     String   // Emoji for the stage
+  color     String   // Hex color for the stage
+  order     Int      // User's custom order
+  isEnabled Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  companies Company[]
+
+  @@unique([userId, stageKey])
+  @@index([userId])
 }
 
 model Company {
@@ -31,7 +54,9 @@ model Company {
   user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   name            String
   website         String?
-  stage           InterviewStage    @default(APPLIED)
+  stage           InterviewStage?   // Legacy field, keep for migration
+  stageId         String?           // New: reference to UserStage
+  userStage       UserStage?        @relation(fields: [stageId], references: [id], onDelete: SetNull)
   recruiterName   String?
   recruiterEmail  String?
   recruiterPhone  String?
@@ -50,26 +75,31 @@ model Company {
 
   @@index([userId])
   @@index([stage])
+  @@index([stageId])
 }
 
 model Email {
-  id              String        @id @default(cuid())
-  companyId       String?
-  company         Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  gmailId         String        @unique
-  threadId        String
-  from            String
-  to              String
-  subject         String
-  snippet         String?
-  body            String?
-  isRead          Boolean       @default(false)
-  isStarred       Boolean       @default(false)
-  receivedAt      DateTime
-  aiSummary       String?
+  id               String        @id @default(cuid())
+  userId           String
+  companyId        String?
+  company          Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  gmailId          String        @unique
+  threadId         String
+  from             String
+  to               String
+  subject          String
+  snippet          String?
+  body             String?
+  isRead           Boolean       @default(false)
+  isStarred        Boolean       @default(false)
+  receivedAt       DateTime
+  aiSummary        String?
   aiSuggestedReply String?
-  createdAt       DateTime      @default(now())
+  isRecruiterEmail Boolean       @default(false)
+  detectedCompany  String?       // AI-detected company name
+  createdAt        DateTime      @default(now())
 
+  @@index([userId])
   @@index([companyId])
   @@index([threadId])
 }
@@ -142,10 +172,15 @@ model EmailTemplate {
 enum InterviewStage {
   WISHLIST
   APPLIED
-  SCREENING
+  RECRUITER_SCREEN
   PHONE_SCREEN
   TECHNICAL
+  SYSTEM_DESIGN
+  BEHAVIORAL
   ONSITE
+  TEAM_MATCH
+  HIRING_MANAGER
+  FINAL_ROUND
   OFFER
   REJECTED
   ACCEPTED
