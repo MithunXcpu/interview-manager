@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Interview Manager 📋
+
+A comprehensive interview scheduling and management tool for hiring teams. Track candidates, schedule interviews, and manage your hiring pipeline.
+
+## Features
+
+- **Dashboard** - Overview of all interviews and candidates
+- **Interview scheduling** - Easy calendar-based scheduling
+- **Candidate tracking** - Keep track of all applicants
+- **Team collaboration** - Share interview feedback
+
+## Tech Stack
+
+- **Framework**: Next.js 16 with App Router
+- **Authentication**: Clerk (optional, supports demo mode)
+- **AI Integration**: Anthropic Claude API
+- **Styling**: Tailwind CSS
+- **Database**: Supabase
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+# Install dependencies
+npm install
+
+# Set up environment variables (copy from .env.example)
+cp .env.example .env.local
+
+# Run development server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) to view the app.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Environment Variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` - Clerk public key (optional)
+- `CLERK_SECRET_KEY` - Clerk secret key (optional)
+- `ANTHROPIC_API_KEY` - For AI features
 
-## Learn More
+**Note**: The app works in demo mode without Clerk configuration.
 
-To learn more about Next.js, take a look at the following resources:
+## Project Structure
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+src/
+├── app/           # Next.js app router pages
+├── components/    # Reusable UI components
+├── lib/           # Utilities and API clients
+└── contexts/      # React context providers
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Deployment
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Deployed on Vercel. Push to main branch for automatic deployment.
